@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -14,10 +15,11 @@ type UserRow = {
   suspended_until?: string | null;
   created_at?: string;
 
-  // Augmented fields
   reports_count?: number;
   approved_pets_count?: number;
   adopted_pets_count?: number;
+
+  id_image_url?: string | null;
 };
 
 function Toast({ message, onClose }: { message: string | null; onClose: () => void }) {
@@ -39,7 +41,6 @@ function Toast({ message, onClose }: { message: string | null; onClose: () => vo
   );
 }
 
-/** ONLY true when value is explicitly true/1/"1"/"true" */
 function toStrictBool(v: unknown) {
   if (v === true) return true;
   if (v === 1) return true;
@@ -57,18 +58,21 @@ function clamp(n: number, min: number, max: number) {
 function pageNumbers(current: number, total: number): (number | "...")[] {
   if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
   const set = new Set<number>([1, 2, total - 1, total, current - 1, current, current + 1]);
-  const sorted = [...set].filter(p => p >= 1 && p <= total).sort((a, b) => a - b);
+  const sorted = [...set].filter((p) => p >= 1 && p <= total).sort((a, b) => a - b);
   const out: (number | "...")[] = [];
   for (let i = 0; i < sorted.length; i++) {
-    if (i === 0) { out.push(sorted[i]); continue; }
-    const prev = sorted[i - 1], cur = sorted[i];
+    if (i === 0) {
+      out.push(sorted[i]);
+      continue;
+    }
+    const prev = sorted[i - 1],
+      cur = sorted[i];
     if (cur - prev === 1) out.push(cur);
     else out.push("...", cur);
   }
   return out;
 }
 
-/* ───────── Pretty "Joined" formatter (no timezone label) ───────── */
 function formatJoined(iso?: string): string {
   if (!iso) return "-";
   const d = new Date(iso);
@@ -106,9 +110,11 @@ export default function UsersPage() {
   const [suspendDays, setSuspendDays] = useState<number>(7);
   const [toast, setToast] = useState<string | null>(null);
 
-  // Pagination state (only bottom pager)
   const [page, setPage] = useState<number>(1);
   const [pageSize, setPageSize] = useState<number>(10);
+
+  // For ID image preview modal
+  const [idPreviewUrl, setIdPreviewUrl] = useState<string | null>(null);
 
   const selectedIds = useMemo(
     () => Object.entries(selected).filter(([, v]) => v).map(([id]) => id),
@@ -128,7 +134,6 @@ export default function UsersPage() {
         (u: UserRow) => (u.role || "").toLowerCase() !== "admin"
       );
 
-      // Normalize flags
       const items: UserRow[] = itemsRaw.map((u) => ({
         ...u,
         is_verified: toStrictBool(u.is_verified),
@@ -140,38 +145,7 @@ export default function UsersPage() {
 
       setRows(items);
       setSelected({});
-      setPage(1); // reset to first page on new dataset
-
-      // Stats
-      const ids = items.map((i) => i.id).join(",");
-      if (ids) {
-        const r = await fetch(`/api/admin/users/stats?ids=${encodeURIComponent(ids)}`, {
-          cache: "no-store",
-        });
-        if (r.ok) {
-          const payload = await r.json();
-          const map: Record<string, {
-            reports_count: number; approved_pets_count: number; adopted_pets_count: number
-          }> = {};
-          for (const s of payload.stats as Array<{
-            id: string; reports_count: number; approved_pets_count: number; adopted_pets_count: number
-          }>) {
-            map[s.id] = {
-              reports_count: s.reports_count,
-              approved_pets_count: s.approved_pets_count,
-              adopted_pets_count: s.adopted_pets_count,
-            };
-          }
-          setRows((prev) =>
-            prev.map((row) => ({
-              ...row,
-              reports_count: map[row.id]?.reports_count ?? 0,
-              approved_pets_count: map[row.id]?.approved_pets_count ?? 0,
-              adopted_pets_count: map[row.id]?.adopted_pets_count ?? 0,
-            }))
-          );
-        }
-      }
+      setPage(1);
     } finally {
       setLoading(false);
     }
@@ -181,7 +155,6 @@ export default function UsersPage() {
     load();
   }, [role]);
 
-  // Keep page in range
   useEffect(() => {
     const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
     setPage((p) => clamp(p, 1, totalPages));
@@ -248,7 +221,11 @@ export default function UsersPage() {
           />
         ),
       },
-      { key: "id", header: "User ID", render: (r: UserRow) => <span className="text-xs text-slate-500">{r.id}</span> },
+      {
+        key: "id",
+        header: "User ID",
+        render: (r: UserRow) => <span className="text-xs text-slate-500">{r.id}</span>,
+      },
       {
         key: "full_name",
         header: "Name",
@@ -272,8 +249,16 @@ export default function UsersPage() {
       },
       { key: "email", header: "Email" },
       { key: "role", header: "Role" },
-      { key: "reports_count", header: "Reports", render: (r: UserRow) => <span className="text-sm">{r.reports_count ?? 0}</span> },
-      { key: "adopted_pets_count", header: "Adopted", render: (r: UserRow) => <span className="text-sm">{r.adopted_pets_count ?? 0}</span> },
+      {
+        key: "reports_count",
+        header: "Reports",
+        render: (r: UserRow) => <span className="text-sm">{r.reports_count ?? 0}</span>,
+      },
+      {
+        key: "adopted_pets_count",
+        header: "Adopted",
+        render: (r: UserRow) => <span className="text-sm">{r.adopted_pets_count ?? 0}</span>,
+      },
       {
         key: "created_at",
         header: "Joined",
@@ -281,11 +266,40 @@ export default function UsersPage() {
           <span className="text-sm text-slate-700">{formatJoined(r.created_at)}</span>
         ),
       },
+      {
+        key: "id_image",
+        header: "ID",
+        render: (r: UserRow) => {
+          const url = (r.id_image_url || "").trim();
+
+          if (!url) {
+            return (
+              <span className="text-[11px] italic text-slate-400">
+                No ID uploaded
+              </span>
+            );
+          }
+
+          return (
+            <button
+              type="button"
+              onClick={() => setIdPreviewUrl(url)}
+              className="group h-16 w-28 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 shadow-sm overflow-hidden transition"
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={url}
+                alt="ID image"
+                className="h-full w-full object-cover group-hover:scale-105 transition-transform"
+              />
+            </button>
+          );
+        },
+      },
     ],
     [rows, selected]
   );
 
-  // Pagination derived
   const total = rows.length;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const currentPage = clamp(page, 1, totalPages);
@@ -336,13 +350,11 @@ export default function UsersPage() {
         <div className="text-sm text-gray-500">Loading…</div>
       ) : (
         <>
-          {/* Top summary ONLY (no top pager, no top page-size control) */}
           <div className="flex items-center justify-between">
             <div className="text-sm text-slate-600">
               Showing{" "}
               <span className="font-semibold text-slate-800">{total === 0 ? 0 : start + 1}</span>{" "}
-              –{" "}
-              <span className="font-semibold text-slate-800">{end}</span>
+              – <span className="font-semibold text-slate-800">{end}</span>
             </div>
             <div />
           </div>
@@ -351,7 +363,6 @@ export default function UsersPage() {
             <DataTable columns={columns as any} rows={viewRows} />
           </div>
 
-          {/* Bottom pager (only one visible) */}
           <div className="flex justify-end">
             <Pager
               currentPage={currentPage}
@@ -411,11 +422,35 @@ export default function UsersPage() {
       )}
 
       <Toast message={toast} onClose={() => setToast(null)} />
+
+      {/* BIG ID PREVIEW MODAL */}
+      {idPreviewUrl && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 px-4">
+          <div className="w-full max-w-4xl">
+            <div className="relative bg-white rounded-2xl shadow-2xl overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setIdPreviewUrl(null)}
+                className="absolute right-4 top-3 text-sm text-slate-600 hover:text-slate-900"
+              >
+                Close
+              </button>
+              <div className="bg-slate-100 flex items-center justify-center max-h-[80vh]">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={idPreviewUrl}
+                  alt="User ID"
+                  className="max-h-[80vh] w-auto object-contain"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-/* ───────── UI: Bottom Pager ───────── */
 function Pager({
   currentPage,
   totalPages,
@@ -442,7 +477,9 @@ function Pager({
 
       {nums.map((n, i) =>
         n === "..." ? (
-          <span key={`el-${i}`} className="px-1 text-slate-400 select-none">…</span>
+          <span key={`el-${i}`} className="px-1 text-slate-400 select-none">
+            …
+          </span>
         ) : (
           <button
             key={n}
@@ -475,7 +512,9 @@ function Pager({
           className="ml-1 rounded-md border border-slate-200 bg-white px-2 py-1"
         >
           {[5, 10, 20, 50].map((s) => (
-            <option key={s} value={s}>{s}</option>
+            <option key={s} value={s}>
+              {s}
+            </option>
           ))}
         </select>
       </div>

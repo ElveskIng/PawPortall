@@ -49,7 +49,6 @@ export default function AddPetPaymentBlock() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const qrSrc = process.env.NEXT_PUBLIC_GCASH_QR_URL || "/gcash-qr.png";
 
-  // we need supabase here for realtime
   const supabase = getSupabaseBrowserClient();
   const userIdRef = useRef<string | null>(null);
 
@@ -59,27 +58,35 @@ export default function AddPetPaymentBlock() {
     setDialogOpen(true);
   }
 
-  async function loadProofs() {
-    setLoading(true);
-    const r = await fetch("/api/payment-proofs", { cache: "no-store" });
-    const j = (await r.json()) as any;
-    if (Array.isArray(j)) {
-      setProofs(j as Proof[]);
-    } else if (j?.error) {
-      // silent
+  // ✅ loadProofs with optional "silent" flag (no loading text)
+  async function loadProofs(options?: { silent?: boolean }) {
+    if (!options?.silent) setLoading(true);
+    try {
+      const r = await fetch("/api/payment-proofs", { cache: "no-store" });
+      const j = (await r.json()) as any;
+      if (Array.isArray(j)) {
+        setProofs(j as Proof[]);
+      }
+    } catch {
+      // ignore, just don't crash UI
+    } finally {
+      if (!options?.silent) setLoading(false);
     }
-    setLoading(false);
   }
 
-  // 1) initial load + setup realtime
+  const hasPending = proofs.some((p) => p.status === "pending");
+
+  // initial load + realtime + silent polling
   useEffect(() => {
     let channel: ReturnType<typeof supabase.channel> | null = null;
+    let interval: ReturnType<typeof setInterval> | null = null;
+    let cancelled = false;
 
     const setup = async () => {
-      // first load
+      // first load: show Loading...
       await loadProofs();
+      if (cancelled) return;
 
-      // get current user from supabase client so we know which changes to listen to
       const {
         data: { user },
       } = await supabase.auth.getUser();
@@ -87,10 +94,8 @@ export default function AddPetPaymentBlock() {
       const currentUserId = user?.id || null;
       userIdRef.current = currentUserId;
 
-      // if no user, no realtime
       if (!currentUserId) return;
 
-      // 2) subscribe to payment_proofs for THIS user
       channel = supabase
         .channel("payment-proofs-user-" + currentUserId)
         .on(
@@ -102,20 +107,24 @@ export default function AddPetPaymentBlock() {
             filter: `user_id=eq.${currentUserId}`,
           },
           async () => {
-            // reload list when admin approves/rejects/adds
-            await loadProofs();
+            // silent refresh on realtime events
+            await loadProofs({ silent: true });
           }
         )
         .subscribe();
+
+      // small silent polling fallback
+      interval = setInterval(() => {
+        void loadProofs({ silent: true });
+      }, 3000);
     };
 
-    setup();
+    void setup();
 
-    // cleanup
     return () => {
-      if (channel) {
-        supabase.removeChannel(channel);
-      }
+      cancelled = true;
+      if (channel) supabase.removeChannel(channel);
+      if (interval) clearInterval(interval);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -133,6 +142,15 @@ export default function AddPetPaymentBlock() {
   }
 
   function onClickSubmit() {
+    if (hasPending) {
+      openDialog(
+        "Pending payment",
+        "You already have a payment submission that is still pending review. " +
+          "Please wait for the admin to approve or reject it before sending a new one."
+      );
+      return;
+    }
+
     if (!file) {
       openDialog("Missing file", "Please select a payment screenshot image.");
       return;
@@ -153,10 +171,16 @@ export default function AddPetPaymentBlock() {
       if (reference.trim()) form.append("reference", reference.trim());
       form.append("image", file as Blob);
 
-      const r = await fetch("/api/payment-proofs", { method: "POST", body: form });
+      const r = await fetch("/api/payment-proofs", {
+        method: "POST",
+        body: form,
+      });
       const text = await r.text().catch(() => "");
       if (!r.ok) {
-        openDialog("Submit failed", text || "Your proof could not be submitted. Please try again.");
+        openDialog(
+          "Submit failed",
+          text || "Your proof could not be submitted. Please try again."
+        );
         return;
       }
 
@@ -165,9 +189,12 @@ export default function AddPetPaymentBlock() {
       setReference("");
       setAmountInput("20");
 
-      // manual reload (in case realtime is a bit late)
+      // after submit we can show loader quickly (non-silent)
       await loadProofs();
-      openDialog("Submitted", "Thanks! Your proof is now pending review by an admin.");
+      openDialog(
+        "Submitted",
+        "Thanks! Your proof is now pending review by an admin."
+      );
     } catch (e: any) {
       openDialog("Submit failed", String(e?.message || e) || "Unexpected error.");
     } finally {
@@ -184,12 +211,18 @@ export default function AddPetPaymentBlock() {
   async function actuallyRemove() {
     if (!confirmId) return;
     try {
-      const r = await fetch(`/api/payment-proofs?id=${encodeURIComponent(confirmId)}`, {
-        method: "DELETE",
-      });
+      const r = await fetch(
+        `/api/payment-proofs?id=${encodeURIComponent(confirmId)}`,
+        {
+          method: "DELETE",
+        }
+      );
       const text = await r.text().catch(() => "");
       if (!r.ok) {
-        openDialog("Delete failed", text || "Couldn’t delete this proof.");
+        openDialog(
+          "Delete failed",
+          text || "Couldn’t delete this proof."
+        );
         return;
       }
       await loadProofs();
@@ -234,7 +267,9 @@ export default function AddPetPaymentBlock() {
       <div className="rounded-2xl border border-gray-200 bg-white/70 p-4">
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           <div>
-            <label className="block text-sm font-medium text-gray-700">Payment screenshot</label>
+            <label className="block text-sm font-medium text-gray-700">
+              Payment screenshot
+            </label>
             <input
               ref={fileInputRef}
               type="file"
@@ -262,7 +297,8 @@ export default function AddPetPaymentBlock() {
               Allowed values: 20, 40, 60, 80, 100 (max per week).
             </div>
             <div className="mt-0.5 text-xs text-gray-700">
-              Estimated credits: <span className="font-medium">{computedCredits}</span>
+              Estimated credits:{" "}
+              <span className="font-medium">{computedCredits}</span>
             </div>
           </div>
 
@@ -282,18 +318,30 @@ export default function AddPetPaymentBlock() {
           <div className="md:col-span-2">
             <button
               onClick={onClickSubmit}
-              disabled={!file || submitting}
+              disabled={!file || submitting || hasPending}
               className="rounded-xl bg-indigo-600 px-4 py-2 text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-indigo-700 disabled:opacity-50"
             >
-              {submitting ? "Submitting..." : "Submit proof"}
+              {hasPending
+                ? "Waiting for admin review…"
+                : submitting
+                ? "Submitting..."
+                : "Submit proof"}
             </button>
+            {hasPending && (
+              <p className="mt-1 text-xs text-amber-700">
+                You currently have a payment that is still <b>pending</b>. You can
+                submit a new proof once the admin approves or rejects it.
+              </p>
+            )}
           </div>
         </div>
       </div>
 
       {/* Submissions list */}
       <div className="rounded-2xl border border-gray-200 bg-white/70 p-4">
-        <div className="text-sm font-medium text-gray-700 mb-2">Your submissions</div>
+        <div className="text-sm font-medium text-gray-700 mb-2">
+          Your submissions
+        </div>
         {loading ? (
           <div className="text-sm text-gray-500">Loading…</div>
         ) : proofs.length === 0 ? (
@@ -316,7 +364,9 @@ export default function AddPetPaymentBlock() {
                     <div className="font-medium">
                       {new Date(p.created_at).toLocaleString()}
                     </div>
-                    <div className="text-gray-500">Ref: {p.reference || "—"}</div>
+                    <div className="text-gray-500">
+                      Ref: {p.reference || "—"}
+                    </div>
                   </div>
                 </div>
 
@@ -351,12 +401,14 @@ export default function AddPetPaymentBlock() {
         )}
       </div>
 
-      {/* dialogs below (unchanged) */}
+      {/* dialogs and QR modal — unchanged */}
       {dialogOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-sm rounded-2xl border border-gray-200 bg-white p-5 shadow-2xl">
             <div className="text-lg font-semibold">{dialogTitle}</div>
-            <div className="mt-2 text-sm text-gray-700 whitespace-pre-wrap">{dialogBody}</div>
+            <div className="mt-2 text-sm text-gray-700 whitespace-pre-wrap">
+              {dialogBody}
+            </div>
             <div className="mt-4 flex justify-end">
               <button
                 className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm text-white hover:bg-indigo-700"
@@ -372,9 +424,12 @@ export default function AddPetPaymentBlock() {
       {confirmOpen && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-sm rounded-2xl border border-gray-200 bg-white p-5 shadow-2xl">
-            <div className="text-lg font-semibold">Remove this rejected proof?</div>
+            <div className="text-lg font-semibold">
+              Remove this rejected proof?
+            </div>
             <p className="mt-2 text-sm text-gray-700">
-              This will permanently delete the rejected submission from your list.
+              This will permanently delete the rejected submission from your
+              list.
             </p>
             <div className="mt-4 flex justify-end gap-2">
               <button
@@ -404,8 +459,8 @@ export default function AddPetPaymentBlock() {
 
             <div className="mt-3 space-y-1 text-sm">
               <div>
-                <span className="font-medium">Payment amount:</span>{" "}
-                ₱{amountNumber.toFixed(2)}
+                <span className="font-medium">Payment amount:</span> ₱
+                {amountNumber.toFixed(2)}
               </div>
               <div>
                 <span className="font-medium">Reference #:</span>{" "}
@@ -417,7 +472,11 @@ export default function AddPetPaymentBlock() {
               Please double-check the amount. The credits you receive will be
               based only on the amount you entered (₱20 = 1 credit, capped at 5
               per week). Entering a wrong or excessive amount may be treated as
-              abuse and <span className="font-semibold">can lead to account suspension</span>.
+              abuse and{" "}
+              <span className="font-semibold">
+                can lead to account suspension
+              </span>
+              .
             </div>
 
             <label className="mt-3 flex items-center gap-2 text-sm text-gray-700">
@@ -476,7 +535,8 @@ export default function AddPetPaymentBlock() {
               className="h-auto w-full max-w-[80vw] rounded-xl object-contain"
             />
             <p className="mt-2 text-center text-sm font-medium text-gray-800">
-              GCash number: <span className="tracking-wide">0955 922 5286</span>
+              GCash number:{" "}
+              <span className="tracking-wide">0955 922 5286</span>
             </p>
           </div>
         </div>

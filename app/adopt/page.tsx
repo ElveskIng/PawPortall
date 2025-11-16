@@ -22,6 +22,9 @@ type Pet = {
   applications?: { count: number }[] | null;
 };
 
+const MAX_ADOPTED_PETS = 3;
+const ADOPTED_STATUSES = ["approved", "accepted", "completed", "adopted"];
+
 export default async function AdoptPage({
   searchParams,
 }: {
@@ -44,7 +47,22 @@ export default async function AdoptPage({
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  const myUserId = user?.id;
+  const myUserId = user?.id || null;
+
+  // 🔒 How many pets has this user already adopted?
+  let myAdoptedCount = 0;
+  let hasReachedAdoptLimit = false;
+
+  if (myUserId) {
+    const { data: adoptedRows } = await supabase
+      .from("applications")
+      .select("id")
+      .eq("user_id", myUserId) // <-- adjust to your adopter column if different
+      .in("status", ADOPTED_STATUSES);
+
+    myAdoptedCount = adoptedRows?.length ?? 0;
+    hasReachedAdoptLimit = myAdoptedCount >= MAX_ADOPTED_PETS;
+  }
 
   const nowIso = new Date().toISOString();
 
@@ -117,6 +135,17 @@ export default async function AdoptPage({
           </div>
         </div>
       </section>
+
+      {/* 🔔 Limit notice */}
+      {hasReachedAdoptLimit && (
+        <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          You have already adopted{" "}
+          <span className="font-semibold">{myAdoptedCount}</span> pets, which is
+          the maximum allowed ({MAX_ADOPTED_PETS}). You can still browse pets,
+          but you can’t apply for more adoptions unless an adoption is cancelled
+          or completed in the system.
+        </div>
+      )}
 
       {/* Error */}
       {error && (
@@ -200,12 +229,23 @@ export default async function AdoptPage({
 
                       <div className="mt-3 flex items-center justify-between">
                         {/* View & Apply button */}
-                        <Link
-                          href={`/pets/${p.id}`}
-                          className="inline-flex items-center rounded-full bg-gradient-to-r from-indigo-500 to-fuchsia-500 px-3.5 py-1.5 text-xs font-semibold text-white shadow hover:opacity-95 active:scale-[0.98]"
-                        >
-                          View &amp; Apply
-                        </Link>
+                        {hasReachedAdoptLimit ? (
+                          <button
+                            type="button"
+                            disabled
+                            title="You have reached the maximum of 3 adopted pets."
+                            className="inline-flex items-center rounded-full bg-gray-200 px-3.5 py-1.5 text-xs font-semibold text-gray-500 shadow cursor-not-allowed"
+                          >
+                            Max adopted reached
+                          </button>
+                        ) : (
+                          <Link
+                            href={`/pets/${p.id}`}
+                            className="inline-flex items-center rounded-full bg-gradient-to-r from-indigo-500 to-fuchsia-500 px-3.5 py-1.5 text-xs font-semibold text-white shadow hover:opacity-95 active:scale-[0.98]"
+                          >
+                            View &amp; Apply
+                          </Link>
+                        )}
 
                         <div className="flex flex-col items-end gap-1 text-xs text-gray-600">
                           {isMine && (
@@ -316,8 +356,7 @@ function SpeciesPillLink({
     "inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ring-1 transition";
   const on =
     "bg-gradient-to-r from-indigo-500 to-fuchsia-500 text-white ring-black/0";
-  const off =
-    "bg-white text-gray-700 ring-black/10 hover:bg-gray-50";
+  const off = "bg-white text-gray-700 ring-black/10 hover:bg-gray-50";
 
   return (
     <Link href={href} className={[base, active ? on : off].join(" ")}>

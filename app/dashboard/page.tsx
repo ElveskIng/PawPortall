@@ -20,6 +20,10 @@ const AddPetPaymentBlock = NextDynamic(
   { ssr: false }
 );
 
+// 🔒 Max adopted pets per user
+const MAX_ADOPTED_PETS = 3;
+const ADOPTED_STATUSES = ["approved", "accepted", "completed", "adopted"];
+
 /* ───────── types ───────── */
 type AppRow = {
   id: string;
@@ -221,6 +225,15 @@ export default async function Dashboard({
     .order("created_at", { ascending: false });
 
   const applications: AppRow[] = (appsRaw as AppRow[] | null) ?? [];
+
+  // 🔢 How many pets has this user already adopted?
+  const adoptedCount = applications.filter((a) => {
+    const appStatus = (a.status || "").toLowerCase();
+    const petStatus = (a.pets?.status || "").toLowerCase();
+    return (
+      ADOPTED_STATUSES.includes(appStatus) || petStatus === "adopted"
+    );
+  }).length;
 
   const { data: myPetsRaw, error: petsErr } = await supabase
     .from("pets")
@@ -529,7 +542,12 @@ export default async function Dashboard({
   return (
     <div className="space-y-8">
       {/* welcome card */}
-      <HeroHeader name={firstName} totals={totals} credits={listingCredits} />
+      <HeroHeader
+        name={firstName}
+        totals={totals}
+        credits={listingCredits}
+        adoptedCount={adoptedCount}
+      />
 
       {errorMsg && <Callout tone="rose" title={decodeURIComponent(errorMsg)} />}
       {petsErr && (
@@ -969,6 +987,8 @@ export default async function Dashboard({
                   const isRejected =
                     displayStatus.toLowerCase() === "rejected";
 
+                  const note = cleanApplicationMessage(a.message);
+
                   return (
                     <Card key={a.id}>
                       <CardHeader
@@ -995,11 +1015,11 @@ export default async function Dashboard({
                           </div>
                         }
                       />
-                      {a.message ? (
-                        <p className="px-4 text-sm text-gray-600">
-                          Note: {a.message}
+                      {note && (
+                        <p className="px-4 text-sm text-gray-600 whitespace-pre-line">
+                          Note: {note}
                         </p>
-                      ) : null}
+                      )}
                       <CardActions>
                         <ActionLink href={`/pets/${a.pet_id}`}>
                           View pet
@@ -1041,10 +1061,12 @@ function HeroHeader({
   name,
   totals,
   credits,
+  adoptedCount,
 }: {
   name: string;
   totals: { total: number; pending: number; approved: number; rejected: number };
   credits: number;
+  adoptedCount: number;
 }) {
   const total = Math.max(totals.total, 1);
   const pct = (n: number) => Math.round((n / total) * 100);
@@ -1062,12 +1084,22 @@ function HeroHeader({
             </p>
           </div>
           <div className="hidden items-center gap-3 sm:flex">
+            {/* Credits pill */}
             <div className="inline-flex items-center rounded-xl border bg-white/80 px-3 py-2 text-sm text-purple-700 shadow-sm">
               <span className="font-medium">Credits:</span>
               <span className="ml-1 rounded-md bg-purple-600 px-2 py-[2px] text-xs text-white">
                 {credits}
               </span>
             </div>
+
+            {/* Adopted count pill (max 3) */}
+            <div className="inline-flex items-center rounded-xl border bg-white/80 px-3 py-2 text-sm text-emerald-700 shadow-sm">
+              <span className="font-medium">Adopted:</span>
+              <span className="ml-1 rounded-md bg-emerald-500 px-2 py-[2px] text-xs text-white">
+                {adoptedCount}/{MAX_ADOPTED_PETS}
+              </span>
+            </div>
+
             <Link
               href="/adopt"
               className="rounded-xl border bg-white/80 px-3 py-2 text-sm text-indigo-700 shadow-sm hover:bg-indigo-50"
@@ -1384,4 +1416,18 @@ function remainingLabel(expires_at: string | null | undefined) {
 function extractAddressFromBio(bio: string) {
   const m = bio.match(/^\s*address:\s*(.+)\s*$/im);
   return m ? m[1].trim() : "";
+}
+
+/** Clean application message for dashboard (hide long ID URLs, etc.) */
+function cleanApplicationMessage(message?: string | null): string {
+  if (!message) return "";
+
+  // If the message has "Attached IDs:", only show the part before that.
+  const [beforeIds] = message.split("Attached IDs:");
+  const trimmed = beforeIds.trim();
+  if (trimmed) return trimmed;
+
+  // Fallback: strip any URLs (safety for other cases).
+  const withoutUrls = message.replace(/https?:\/\/\S+/g, "").trim();
+  return withoutUrls;
 }

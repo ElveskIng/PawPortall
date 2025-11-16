@@ -1,3 +1,4 @@
+// middleware.ts
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
@@ -72,9 +73,13 @@ export async function middleware(req: NextRequest) {
     return res;
   }
 
-  // Admins: keep them inside /admin
+  // ───────── Admin routing rules ─────────
   if (user && role === "admin") {
-    if (!path.startsWith("/admin")) {
+    const isAdminSection = path.startsWith("/admin");
+    const isUserProfile = path.startsWith("/users/"); // allow viewing user profiles
+
+    // Keep admin inside /admin, BUT allow /users/[id] profile pages
+    if (!isAdminSection && !isUserProfile) {
       const to = req.nextUrl.clone();
       to.pathname = "/admin";
       return NextResponse.redirect(to);
@@ -82,7 +87,7 @@ export async function middleware(req: NextRequest) {
     return res;
   }
 
-  // Non-admin (or signed out): block /admin
+  // ───────── Non-admin (or signed out): block /admin ─────────
   if (path.startsWith("/admin")) {
     const to = req.nextUrl.clone();
     to.pathname = "/";

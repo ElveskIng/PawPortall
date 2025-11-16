@@ -19,7 +19,9 @@ function getUserClient() {
             cookiesToSet.forEach(({ name, value, options }) =>
               cookieStore.set(name, value, options)
             );
-          } catch {}
+          } catch {
+            // ignore cookie errors on Vercel/edge
+          }
         },
       },
     }
@@ -34,7 +36,6 @@ function getAdminClient() {
 }
 
 const BUCKET = "payment-proofs";
-// const FIXED_PRICE = 20;  // ← hindi na natin gagamitin for insert
 const ALLOWED_AMOUNTS = [20, 40, 60, 80, 100] as const;
 
 export async function GET() {
@@ -48,7 +49,8 @@ export async function GET() {
     .from("payment_proofs")
     .select("*")
     .eq("user_id", user.id)
-    .neq("status", "approved") // <-- huwag isama ang approved sa list ng user
+    .neq("status", "approved")          // huwag isama approved sa user
+    .eq("hidden_for_user", false)       // ⬅️ huwag ibalik yung na-X
     .order("created_at", { ascending: false });
 
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
@@ -70,7 +72,7 @@ export async function POST(req: Request) {
 
   const reference = (form.get("reference") || "") as string;
 
-  // ✅ NEW: read amount from form
+  // read amount from form
   const amountRaw = form.get("amount");
   const parsed = Number(String(amountRaw || "").trim());
   let amount = Number.isFinite(parsed) ? parsed : 20;
@@ -107,13 +109,13 @@ export async function POST(req: Request) {
   const { data: pub } = admin.storage.from(BUCKET).getPublicUrl(path);
   const imageUrl = pub?.publicUrl || "";
 
-  // ✅ FIX: use the amount we just parsed (NOT fixed 20)
   const { error: insErr } = await supa.from("payment_proofs").insert({
     user_id: user.id,
     image_url: imageUrl,
-    amount: amount, // ← ito na: 20/40/60/80/100
+    amount: amount,            // 20/40/60/80/100
     reference: reference || null,
     status: "pending",
+    hidden_for_user: false,    // siguradong false sa simula
   });
 
   if (insErr) {
@@ -123,7 +125,7 @@ export async function POST(req: Request) {
   return NextResponse.json({ ok: true });
 }
 
-/* ---------------------------- DELETE (new) ---------------------------- */
+/* ---------------------------- DELETE (soft hide for user) ---------------------------- */
 /** convert a public URL back to the storage object path */
 function storagePathFromPublicUrl(url: string | null | undefined) {
   if (!url) return null;
@@ -152,7 +154,7 @@ export async function DELETE(req: Request) {
       return NextResponse.json({ error: "Not signed in" }, { status: 401 });
     }
 
-    // Use service role to read & delete; still enforce ownership + rejected
+    // Use service role to read & update; still enforce ownership + rejected
     const admin = getAdminClient();
 
     // Fetch the row
@@ -166,7 +168,7 @@ export async function DELETE(req: Request) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    // Only the owner can delete, and only if it's rejected
+    // Only the owner can hide, and only if it's rejected
     if (row.user_id !== user.id) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
@@ -177,22 +179,17 @@ export async function DELETE(req: Request) {
       );
     }
 
-    // Remove storage object (best-effort)
-    const objectPath = storagePathFromPublicUrl(row.image_url);
-    if (objectPath) {
-      await admin.storage.from(BUCKET).remove([objectPath]).catch(() => {});
-    }
-
-    // Delete DB row
-    const { error: delErr } = await admin
+    // NOTE: we keep the image and image_url so admin still sees everything.
+    // Just mark as hidden_for_user = true
+    const { error: updErr } = await admin
       .from("payment_proofs")
-      .delete()
+      .update({ hidden_for_user: true })
       .eq("id", id)
       .eq("user_id", user.id)
       .eq("status", "rejected");
 
-    if (delErr) {
-      return NextResponse.json({ error: delErr.message }, { status: 400 });
+    if (updErr) {
+      return NextResponse.json({ error: updErr.message }, { status: 400 });
     }
 
     return NextResponse.json({ ok: true });

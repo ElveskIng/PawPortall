@@ -2,7 +2,7 @@
 // app/profile/page.tsx
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
 import { Camera, Check, Copy, Link2, Loader2, Pencil, ShieldCheck } from "lucide-react";
 import IdTypeSelect from "@/components/IdTypeSelect";
@@ -17,11 +17,25 @@ type ProfileRow = {
   bio: string | null;
   avatar_url: string | null;
   links: ProfileLink[] | null;
+  id_image_url: string | null;
   email?: string | null;
   updated_at?: string | null;
 };
 
 type PartialProfileRow = Partial<ProfileRow> & { id: string };
+
+/* --------- Default profile para hindi mag-null / mag-block -------- */
+const BLANK_PROFILE: ProfileRow = {
+  id: "",
+  full_name: null,
+  phone: null,
+  bio: null,
+  avatar_url: null,
+  links: [],
+  id_image_url: null,
+  email: null,
+  updated_at: null,
+};
 
 /* ---------------------------- Helpers ---------------------------- */
 const safeUrl = (url: string) => {
@@ -46,7 +60,8 @@ const displayHost = (url: string) => {
 const stripProtocol = (url: string) => {
   try {
     const u = new URL(url);
-    const path = (u.pathname === "/" ? "" : u.pathname) + (u.search || "") + (u.hash || "");
+    const path =
+      (u.pathname === "/" ? "" : u.pathname) + (u.search || "") + (u.hash || "");
     return `${u.host}${path}`;
   } catch {
     return url.replace(/^https?:\/\//i, "");
@@ -59,7 +74,8 @@ const digitsOnly = (v: string) => v.replace(/\D+/g, "");
 
 function errorMessage(err: unknown, fallback = "Unexpected error"): string {
   if (typeof err === "string") return err;
-  if (err && typeof err === "object" && "message" in err) return String((err as any).message || fallback);
+  if (err && typeof err === "object" && "message" in err)
+    return String((err as any).message || fallback);
   return fallback;
 }
 
@@ -67,7 +83,11 @@ function errorMessage(err: unknown, fallback = "Unexpected error"): string {
 function withUiTimeout<T>(promise: Promise<T>, ms = 10000): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const t = setTimeout(() => {
-      reject(new Error("Saving is taking too long. Please check your internet and try again."));
+      reject(
+        new Error(
+          "Saving is taking too long. Please check your internet and try again."
+        )
+      );
     }, ms);
     promise
       .then((v) => {
@@ -103,7 +123,13 @@ function parseBio(bio?: string | null) {
   return res;
 }
 
-function buildBio(address: string, idType: string, idNumber: string, about: string, idImageUrl?: string) {
+function buildBio(
+  address: string,
+  idType: string,
+  idNumber: string,
+  about: string,
+  idImageUrl?: string
+) {
   const parts: string[] = [];
   if (address.trim()) parts.push(`Address: ${address.trim()}`);
   if (idType.trim()) parts.push(`ID Type: ${idType.trim()}`);
@@ -124,12 +150,13 @@ function requiresVerification(p: ProfileRow | null) {
 /* ------------------------------- Page ---------------------------- */
 export default function ProfilePage() {
   const supabase = getSupabaseBrowserClient();
-  const IDS_BUCKET = "ids";
+  const IDS_BUCKET = "id-images";
 
   const [userId, setUserId] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
 
-  const [profile, setProfile] = useState<ProfileRow | null>(null);
+  // ✅ Default agad sa BLANK_PROFILE (hindi na null)
+  const [profile, setProfile] = useState<ProfileRow>(BLANK_PROFILE);
   const [loading, setLoading] = useState(true);
   const [loadErr, setLoadErr] = useState<string | null>(null);
 
@@ -174,7 +201,7 @@ export default function ProfilePage() {
   const [verifyErr, setVerifyErr] = useState<string | null>(null);
   const [verifyOk, setVerifyOk] = useState<string | null>(null);
 
-  // NEW: purpose dropdown
+  // purpose dropdown
   const [verifyIntent, setVerifyIntent] = useState<"" | "placing" | "adopter">("");
 
   /* -------------------- SMART UPSERT (with fallback) ------------------- */
@@ -210,90 +237,124 @@ export default function ProfilePage() {
   }
 
   /* ------------------------------- load -------------------------------- */
-  const fetchProfile = useCallback(
-    async (uid: string) => {
-      setLoadErr(null);
-      const { data, error } = await supabase
-        .from("profiles")
-        .select(["id", "full_name", "phone", "bio", "avatar_url", "links"].join(","))
-        .eq("id", uid)
-        .maybeSingle();
-
-      if (error && error.code !== "PGRST116") setLoadErr(error.message);
-
-      const row: ProfileRow =
-        (data as any) ?? { id: uid, full_name: null, phone: null, bio: null, avatar_url: null, links: [] };
-
-      let links: ProfileLink[] | null = row.links;
-      if (typeof row.links === "string") {
-        try {
-          const parsed = JSON.parse(row.links) as any;
-          if (Array.isArray(parsed)) links = parsed;
-          else links = [];
-        } catch {
-          links = [];
-        }
-      }
-
-      const fixedRow: ProfileRow = { ...row, links };
-
-      setProfile(fixedRow);
-
-      setEditFullName(fixedRow.full_name ?? "");
-      setEditPhone(fixedRow.phone ?? "");
-
-      const parsed = parseBio(fixedRow.bio);
-      setEditFullAddress(parsed.address || "");
-      setEditIdType(parsed.idType || "");
-      setEditIdNumber(parsed.idNumber || "");
-      setEditAbout(parsed.about || "");
-
-      const fb = (links || []).find(
-        (l) =>
-          (l.label || "").toLowerCase() === "facebook" ||
-          /facebook\.com|fb\.com/i.test(l.url || "")
-      );
-      const ig = (links || []).find(
-        (l) =>
-          (l.label || "").toLowerCase() === "instagram" ||
-          /instagram\.com/i.test(l.url || "")
-      );
-      setFbUrl(fb?.url ? stripProtocol(fb.url) : "");
-      setIgUrl(ig?.url ? stripProtocol(ig.url) : "");
-
-      setVerifyOpen(!!uid && requiresVerification(fixedRow));
-    },
-    [supabase]
-  );
-
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
+    let isMounted = true;
+
+    async function run() {
+      setLoading(true);
+      setLoadErr(null);
+
       try {
         const { data, error } = await supabase.auth.getUser();
         if (error) throw error;
         const u = data?.user ?? null;
+
         if (!u) {
-          if (!cancelled) {
-            setUserId(null);
-            setUserEmail(null);
-          }
+          if (!isMounted) return;
+          setUserId(null);
+          setUserEmail(null);
+          setProfile(BLANK_PROFILE);
           return;
         }
-        if (cancelled) return;
+
+        if (!isMounted) return;
+
         setUserId(u.id);
         setUserEmail(u.email ?? null);
-        await fetchProfile(u.id);
+
+        const { data: rowData, error: rowErr } = await supabase
+          .from("profiles")
+          .select(
+            [
+              "id",
+              "full_name",
+              "phone",
+              "bio",
+              "avatar_url",
+              "links",
+              "id_image_url",
+            ].join(",")
+          )
+          .eq("id", u.id)
+          .maybeSingle();
+
+        if (rowErr && rowErr.code !== "PGRST116") {
+          console.error("Profile load error:", rowErr);
+          setLoadErr(rowErr.message);
+        }
+
+        const baseRow: ProfileRow =
+          (rowData as any) ?? {
+            id: u.id,
+            full_name: null,
+            phone: null,
+            bio: null,
+            avatar_url: null,
+            links: [],
+            id_image_url: null,
+          };
+
+        let links: ProfileLink[] | null = baseRow.links;
+        if (typeof baseRow.links === "string") {
+          try {
+            const parsed = JSON.parse(baseRow.links) as any;
+            links = Array.isArray(parsed) ? parsed : [];
+          } catch {
+            links = [];
+          }
+        }
+
+        const fixedRow: ProfileRow = {
+          ...baseRow,
+          links,
+          id_image_url: baseRow.id_image_url ?? null,
+        };
+
+        if (!isMounted) return;
+
+        setProfile(fixedRow);
+
+        // pre-fill edit fields
+        setEditFullName(fixedRow.full_name ?? "");
+        setEditPhone(fixedRow.phone ?? "");
+
+        const parsed = parseBio(fixedRow.bio);
+        setEditFullAddress(parsed.address || "");
+        setEditIdType(parsed.idType || "");
+        setEditIdNumber(parsed.idNumber || "");
+        setEditAbout(parsed.about || "");
+
+        const fb = (links || []).find(
+          (l) =>
+            (l.label || "").toLowerCase() === "facebook" ||
+            /facebook\.com|fb\.com/i.test(l.url || "")
+        );
+        const ig = (links || []).find(
+          (l) =>
+            (l.label || "").toLowerCase() === "instagram" ||
+            /instagram\.com/i.test(l.url || "")
+        );
+        setFbUrl(fb?.url ? stripProtocol(fb.url) : "");
+        setIgUrl(ig?.url ? stripProtocol(ig.url) : "");
+
+        setVerifyOpen(false);
       } catch (err) {
-        if (!cancelled) setLoadErr(errorMessage(err, "Could not load your profile."));
+        if (!isMounted) return;
+        console.error("Profile load fatal error:", err);
+        setLoadErr(errorMessage(err, "Could not load your profile."));
+        setProfile(BLANK_PROFILE);
       } finally {
-        if (!cancelled) setLoading(false);
+        if (isMounted) setLoading(false);
       }
-    })();
+    }
+
+    run();
+
     return () => {
-      cancelled = true;
+      isMounted = false;
     };
-  }, [supabase, fetchProfile]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supabase]);
 
   const avatarSrc = useMemo(() => {
     if (!profile?.avatar_url) return null;
@@ -301,6 +362,10 @@ export default function ProfilePage() {
       ? `${profile.avatar_url}&v=${avatarVersion}`
       : `${profile.avatar_url}?v=${avatarVersion}`;
   }, [profile?.avatar_url, avatarVersion]);
+
+  const bioParsed = useMemo(() => parseBio(profile?.bio), [profile?.bio]);
+  const fullAddressFromBio = bioParsed.address || null;
+  const aboutFromBio = bioParsed.about || null;
 
   /* ---------------------------- avatar ops ---------------------------- */
   const chooseAvatar = () => {
@@ -310,7 +375,7 @@ export default function ProfilePage() {
 
   const onFilePicked = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
-    if (!f) return;
+       if (!f) return;
     setAvatarFile(f);
     if (avatarPreview) URL.revokeObjectURL(avatarPreview);
     setAvatarPreview(URL.createObjectURL(f));
@@ -348,7 +413,7 @@ export default function ProfilePage() {
   }
 
   /* ------------------------- EDIT INFORMATION ------------------------- */
-  const saveEditInfo = useCallback(async () => {
+  const saveEditInfo = async () => {
     if (!profile) return;
     setEditSaving(true);
     setEditErr(null);
@@ -358,18 +423,26 @@ export default function ProfilePage() {
 
       if (fbUrl.trim()) {
         const u = fbUrl.startsWith("http") ? fbUrl : `https://${fbUrl}`;
-        if (!FB_RE.test(u)) throw new Error("Facebook link must be a valid facebook.com/fb.com URL.");
+        if (!FB_RE.test(u))
+          throw new Error("Facebook link must be a valid facebook.com/fb.com URL.");
         links.push({ label: "Facebook", url: safeUrl(u) });
       }
 
       if (igUrl.trim()) {
         const u = igUrl.startsWith("http") ? igUrl : `https://${igUrl}`;
-        if (!IG_RE.test(u)) throw new Error("Instagram link must be a valid instagram.com URL.");
+        if (!IG_RE.test(u))
+          throw new Error("Instagram link must be a valid instagram.com URL.");
         links.push({ label: "Instagram", url: safeUrl(u) });
       }
 
       const old = parseBio(profile.bio);
-      const newBio = buildBio(editFullAddress || "", old.idType || "", old.idNumber || "", editAbout || "");
+      const newBio = buildBio(
+        editFullAddress || "",
+        old.idType || "",
+        old.idNumber || "",
+        editAbout || "",
+        old.idImage || ""
+      );
 
       const payload: PartialProfileRow = {
         id: profile.id,
@@ -399,16 +472,7 @@ export default function ProfilePage() {
     } finally {
       setEditSaving(false);
     }
-  }, [
-    profile,
-    fbUrl,
-    igUrl,
-    editFullName,
-    editPhone,
-    editFullAddress,
-    editAbout,
-    supabase,
-  ]);
+  };
 
   /* ----------------------- VERIFICATION MODAL ----------------------- */
   function onPickIdFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -425,28 +489,39 @@ export default function ProfilePage() {
 
     const MAX_MB = 8;
     const okTypes = ["image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif"];
-    if (idFile.size > MAX_MB * 1024 * 1024) throw new Error(`ID image too large (>${MAX_MB} MB).`);
-    if (idFile.type && !okTypes.includes(idFile.type)) throw new Error("Unsupported image type.");
+    if (idFile.size > MAX_MB * 1024 * 1024)
+      throw new Error(`ID image too large (>${MAX_MB} MB).`);
+    if (idFile.type && !okTypes.includes(idFile.type))
+      throw new Error("Unsupported image type.");
 
     setVerifyErr(null);
     setIdUploading(true);
     try {
       const ext = (idFile.name.split(".").pop() || "jpg").toLowerCase();
-      const path = `${userId}/${Date.now()}.${ext}`;
+      const path = `applications/${userId}/${Date.now()}.${ext}`;
 
-      const uploadRes: any = await (supabase as any).storage.from(IDS_BUCKET).upload(path, idFile, {
-        cacheControl: "3600",
-        upsert: true,
-      });
-      if (uploadRes?.error) throw new Error(uploadRes.error.message || "Upload failed");
+      const uploadRes: any = await (supabase as any).storage
+        .from(IDS_BUCKET)
+        .upload(path, idFile, {
+          cacheControl: "3600",
+          upsert: true,
+        });
+      if (uploadRes?.error) {
+        console.error("ID upload error:", uploadRes.error);
+        throw new Error(uploadRes.error.message || "Upload failed");
+      }
 
       const pubRes: any = (supabase as any).storage.from(IDS_BUCKET).getPublicUrl(path);
-      if (pubRes?.error) throw new Error(pubRes.error.message || "Could not generate public URL");
+      if (pubRes?.error) {
+        console.error("Public URL error:", pubRes.error);
+        throw new Error(pubRes.error.message || "Could not generate public URL");
+      }
       const publicUrl: string | undefined = pubRes?.data && pubRes.data.publicUrl;
       if (!publicUrl) throw new Error("Public URL is empty.");
       return publicUrl;
     } catch (e) {
-      setVerifyErr(errorMessage(e, "Could not upload ID image."));
+      const msg = errorMessage(e, "Could not upload ID image.");
+      setVerifyErr(msg);
       return null;
     } finally {
       setIdUploading(false);
@@ -462,20 +537,28 @@ export default function ProfilePage() {
     try {
       const phone = digitsOnly(editPhone).slice(0, 11);
       if (phone.length !== 11) throw new Error("Phone number must be exactly 11 digits.");
-      if (!(editFullAddress || "").trim()) throw new Error("Please complete the full address.");
+      if (!(editFullAddress || "").trim())
+        throw new Error("Please complete the full address.");
 
-      let idImageUrl: string | null = null;
+      let newUploadedUrl: string | null = null;
       if (idFile) {
-        idImageUrl = await uploadIdImageIfAny();
-        if (!idImageUrl) throw new Error("Could not upload ID image.");
+        newUploadedUrl = await uploadIdImageIfAny();
+        if (!newUploadedUrl) {
+          throw new Error("ID image upload failed. Please see the error message above.");
+        }
       }
+
+      const parsedOld = parseBio(profile.bio);
+
+      const finalIdImageUrl =
+        newUploadedUrl || profile.id_image_url || parsedOld.idImage || null;
 
       const combinedBio = buildBio(
         editFullAddress,
         editIdType,
         editIdNumber,
         editAbout,
-        idImageUrl || undefined
+        finalIdImageUrl || undefined
       );
 
       await withUiTimeout(
@@ -483,6 +566,7 @@ export default function ProfilePage() {
           id: profile.id,
           phone,
           bio: combinedBio || null,
+          id_image_url: finalIdImageUrl,
         }),
         10000
       );
@@ -493,25 +577,19 @@ export default function ProfilePage() {
               ...prev,
               phone,
               bio: combinedBio || null,
+              id_image_url: finalIdImageUrl ?? prev.id_image_url,
             }
           : prev
       );
 
       setVerifyOk("Verification info saved.");
-      setVerifyOpen(
-        requiresVerification({
-          ...profile,
-          phone,
-          bio: combinedBio || null,
-        })
-      );
 
-      // clear local file/preview after success
+      setVerifyOpen(false);
+
       setIdFile(null);
       if (idPreview) URL.revokeObjectURL(idPreview);
       setIdPreview(null);
 
-      // redirect depende sa pinili
       if (typeof window !== "undefined") {
         if (verifyIntent === "placing") {
           window.location.href = "/dashboard";
@@ -526,41 +604,44 @@ export default function ProfilePage() {
     }
   }
 
-  const bioParsed = parseBio(profile?.bio);
-  const fullAddressFromBio = bioParsed.address || null;
-  const aboutFromBio = bioParsed.about || null;
-
   /* ------------------------------- render --------------------------- */
-  // para sure na kahit may konting error sa load, mag-render pa rin
-  if (loading && !profile) {
-    return (
-      <div className="max-w-5xl mx-auto px-4 py-12">
-        <h1 className="text-3xl font-bold">Your Profile</h1>
-        <div className="mt-3 h-3 w-40 animate-pulse rounded bg-gray-200" />
-        {loadErr && <p className="mt-2 text-sm text-red-600">{loadErr}</p>}
-      </div>
-    );
-  }
+  // ❌ WALA NA yung dating `if (!profile) { ... }` na skeleton lang
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8">
       <h1 className="text-3xl font-bold tracking-tight">Your Profile</h1>
       <div className="text-sm text-gray-600 mt-2">
         <span className="inline-flex items-center gap-2 rounded-full bg-gray-100 px-3 py-1">
-          {userEmail}
+          {userEmail || "Not signed in"}
         </span>
       </div>
+
+      {loadErr && (
+        <p className="mt-3 text-sm text-red-600">
+          {loadErr} (your local data will still show)
+        </p>
+      )}
 
       {requiresVerification(profile) && (
         <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-amber-800 flex items-start gap-3">
           <ShieldCheck className="h-5 w-5 mt-0.5" />
-          <div className="text-sm">
+          <div className="text-sm flex-1">
             <div className="font-semibold">Identity verification required</div>
-            <div>Please complete your phone, full address, and ID image before using other features.</div>
+            <div>
+              Please complete your phone, full address, and ID image before using
+              other features.
+            </div>
           </div>
+          <button
+            onClick={() => setVerifyOpen(true)}
+            className="ml-3 inline-flex items-center rounded-full bg-amber-600 px-3 py-1 text-xs font-medium text-white hover:bg-amber-700"
+          >
+            Verify now
+          </button>
         </div>
       )}
 
+      {/* ------------- AVATAR + DETAILS CARD ------------- */}
       <div className="mt-6 rounded-3xl overflow-hidden border border-black/5 shadow-sm bg-white">
         {/* header */}
         <div className="relative h-40 sm:h-48 bg-gradient-to-r from-violet-600 via-fuchsia-600 to-purple-600">
@@ -574,7 +655,7 @@ export default function ProfilePage() {
           {/* avatar */}
           <div className="absolute -top-12 left-6">
             <div className="h-24 w-24 rounded-full ring-4 ring-white shadow-md overflow-hidden bg-gray-100 grid place-items-center">
-              {profile?.avatar_url && !imgError ? (
+              {profile.avatar_url && !imgError ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={avatarSrc || ""}
@@ -590,7 +671,9 @@ export default function ProfilePage() {
 
           <div className="pl-32 flex flex-col gap-2">
             <div className="flex items-center gap-3 flex-wrap">
-              <div className="text-xl font-semibold">{profile?.full_name || "Unnamed user"}</div>
+              <div className="text-xl font-semibold">
+                {profile.full_name || "Unnamed user"}
+              </div>
               <button
                 className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-2 py-1 text-sm hover:bg-gray-50"
                 onClick={() => setEditOpen(true)}
@@ -602,7 +685,8 @@ export default function ProfilePage() {
             </div>
 
             <div className="text-sm text-gray-500">
-              Member since <span className="font-medium">{new Date().toLocaleDateString()}</span>
+              Member since{" "}
+              <span className="font-medium">{new Date().toLocaleDateString()}</span>
             </div>
 
             <div className="mt-3 flex items-center gap-2 flex-wrap">
@@ -616,21 +700,26 @@ export default function ProfilePage() {
 
               <button
                 onClick={async () => {
-                  if (!profile?.id) return;
                   try {
                     await navigator.clipboard.writeText(profile.id);
                     setCopied(true);
                     setTimeout(() => setCopied(false), 1200);
-                  } catch {}
+                  } catch {
+                    // ignore
+                  }
                 }}
                 className="inline-flex items-center gap-2 rounded-lg bg-white border border-gray-200 px-3 py-1.5 text-sm hover:bg-gray-50"
                 title="Copy User ID"
               >
-                {copied ? <Check className="h-4 w-4 text-emerald-600" /> : <Copy className="h-4 w-4" />}
+                {copied ? (
+                  <Check className="h-4 w-4 text-emerald-600" />
+                ) : (
+                  <Copy className="h-4 w-4" />
+                )}
                 Copy User ID
               </button>
 
-              <span className="text-xs text-gray-500 select-all">{profile?.id}</span>
+              <span className="text-xs text-gray-500 select-all">{profile.id}</span>
             </div>
           </div>
         </div>
@@ -640,28 +729,46 @@ export default function ProfilePage() {
           <div className="rounded-2xl border border-gray-100 bg-gradient-to-br from-white to-violet-50/40 p-4 sm:p-6">
             <dl className="grid grid-cols-1 gap-6">
               <div>
-                <dt className="text-xs font-medium text-gray-500 uppercase tracking-wide">Phone</dt>
-                <dd className="mt-1 text-gray-800">{profile?.phone || <span className="text-gray-400">Not set</span>}</dd>
-              </div>
-
-              <div>
-                <dt className="text-xs font-medium text-gray-500 uppercase tracking-wide">Full address</dt>
+                <dt className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                  Phone
+                </dt>
                 <dd className="mt-1 text-gray-800">
-                  {fullAddressFromBio ? fullAddressFromBio : <span className="text-gray-400">Not set</span>}
+                  {profile.phone || <span className="text-gray-400">Not set</span>}
                 </dd>
               </div>
 
               <div>
-                <dt className="text-xs font-medium text-gray-500 uppercase tracking-wide">About you</dt>
+                <dt className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                  Full address
+                </dt>
+                <dd className="mt-1 text-gray-800">
+                  {fullAddressFromBio ? (
+                    fullAddressFromBio
+                  ) : (
+                    <span className="text-gray-400">Not set</span>
+                  )}
+                </dd>
+              </div>
+
+              <div>
+                <dt className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                  About you
+                </dt>
                 <dd className="mt-1 text-gray-800 whitespace-pre-wrap">
-                  {aboutFromBio ? aboutFromBio : <span className="text-gray-400">No information yet.</span>}
+                  {aboutFromBio ? (
+                    aboutFromBio
+                  ) : (
+                    <span className="text-gray-400">No information yet.</span>
+                  )}
                 </dd>
               </div>
 
               <div>
-                <dt className="text-xs font-medium text-gray-500 uppercase tracking-wide">Links</dt>
+                <dt className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                  Links
+                </dt>
                 <dd className="mt-2">
-                  {profile?.links && profile.links.length > 0 ? (
+                  {profile.links && profile.links.length > 0 ? (
                     <div className="flex flex-wrap gap-2">
                       {profile.links.map((l, idx) => {
                         const href = safeUrl(l.url);
@@ -678,7 +785,9 @@ export default function ProfilePage() {
                             <Link2 className="h-4 w-4" />
                             <div className="flex items-center gap-2">
                               <span>{l.label || displayHost(href)}</span>
-                              <span className="text-xs text-gray-500 truncate max-w-[220px]">{shown}</span>
+                              <span className="text-xs text-gray-500 truncate max-w-[220px]">
+                                {shown}
+                              </span>
                             </div>
                           </a>
                         );
@@ -695,7 +804,13 @@ export default function ProfilePage() {
       </div>
 
       {/* hidden file input for avatar */}
-      <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={onFilePicked} />
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={onFilePicked}
+      />
 
       {/* Avatar dialog */}
       {avatarDlgOpen && (
@@ -886,12 +1001,12 @@ export default function ProfilePage() {
       {/* Verification dialog */}
       {verifyOpen && userId && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4">
-          <div className="w-full max-w-2xl rounded-2xl bg-white shadow-xl overflow-hidden">
+          <div className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-xl">
             <div className="px-5 py-3 bg-gradient-to-r from-violet-600 via-fuchsia-600 to-purple-600 text-white flex items-center justify-center">
               <div className="font-semibold">Identity verification (required)</div>
             </div>
 
-            <div className="p-5 space-y-5">
+            <div className="p-6 space-y-5">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="text-sm text-gray-600">Phone number</label>
@@ -933,21 +1048,33 @@ export default function ProfilePage() {
                 </div>
                 <div>
                   <label className="text-sm text-gray-600">Upload ID image</label>
-                  <input type="file" accept="image/*" onChange={onPickIdFile} className="mt-1 block w-full text-sm" />
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={onPickIdFile}
+                    className="mt-1 block w-full text-sm"
+                  />
                   {idPreview && (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={idPreview} alt="ID preview" className="mt-2 h-28 w-auto rounded-md border" />
+                    <img
+                      src={idPreview}
+                      alt="ID preview"
+                      className="mt-2 h-40 w-auto rounded-md border"
+                    />
                   )}
-                  {idUploading && <div className="text-xs text-gray-500 mt-1">Uploading…</div>}
+                  {idUploading && (
+                    <div className="text-xs text-gray-500 mt-1">Uploading…</div>
+                  )}
                 </div>
               </div>
 
-              {/* NEW dropdown */}
               <div>
                 <label className="text-sm text-gray-600">What do you want to do?</label>
                 <select
                   value={verifyIntent}
-                  onChange={(e) => setVerifyIntent(e.target.value as "placing" | "adopter" | "")}
+                  onChange={(e) =>
+                    setVerifyIntent(e.target.value as "placing" | "adopter" | "")
+                  }
                   className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2 outline-none focus:ring-2 ring-indigo-500 bg-white"
                 >
                   <option value="">Select purpose…</option>
@@ -970,13 +1097,15 @@ export default function ProfilePage() {
               {verifyErr && <div className="text-sm text-red-600">{verifyErr}</div>}
               {verifyOk && <div className="text-sm text-emerald-700">{verifyOk}</div>}
 
-              <div className="flex justify-end gap-2 pt-1">
+              <div className="flex justify-end gap-2 pt-1 pb-2">
                 <button
                   onClick={saveVerification}
                   disabled={verifySaving || idUploading}
-                  className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50"
+                  className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50"
                 >
-                  {(verifySaving || idUploading) && <Loader2 className="h-4 w-4 animate-spin" />}
+                  {(verifySaving || idUploading) && (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  )}
                   {verifySaving ? "Saving…" : "Save & submit"}
                 </button>
               </div>

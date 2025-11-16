@@ -107,7 +107,7 @@ function buildBreedsBarData(raw: any[]): BreedsBarDatum[] {
   for (const item of raw) {
     const key = String(item ?? "Unknown");
     counts.set(key, (counts.get(key) ?? 0) + 1);
-  }
+    }
   return Array.from(counts.entries())
     .map(([label, value]) => ({ label, value }))
     .sort((a, b) => b.value - a.value);
@@ -173,6 +173,9 @@ async function fetchDashboard(
     // day-of-week series for selected week
     dailyUsersWeekRes,
     dailyApprovedWeekRawRes,
+    // NEW: counts from payment_proofs
+    approvedCountRes,
+    rejectedCountRes,
   ] = await Promise.all([
     supabase
       .rpc("admin_dashboard_kpis_users", {
@@ -188,7 +191,16 @@ async function fetchDashboard(
           "deleted",
         ],
         approved_app_keys: ["approved", "accepted", "completed", "adopted"],
-        rejected_app_keys: ["rejected", "declined", "denied", "cancelled", "canceled", "withdrawn", "failed", "closed"],
+        rejected_app_keys: [
+          "rejected",
+          "declined",
+          "denied",
+          "cancelled",
+          "canceled",
+          "withdrawn",
+          "failed",
+          "closed",
+        ],
       })
       .single(),
 
@@ -220,6 +232,16 @@ async function fetchDashboard(
       .in("status", APPROVED_STATUSES)
       .gte("created_at", weekStartDate.toISOString())
       .lt("created_at", weekEndDate.toISOString()),
+
+    // ✅ counts based on payment_proofs (status = approved / rejected)
+    supabase
+      .from("payment_proofs")
+      .select("id", { head: true, count: "exact" })
+      .in("status", ["approved"]),
+    supabase
+      .from("payment_proofs")
+      .select("id", { head: true, count: "exact" })
+      .in("status", ["rejected"]),
   ]);
 
   /* ----- KPIs ----- */
@@ -241,11 +263,19 @@ async function fetchDashboard(
   // Keep available as non-adopted (safe, consistent)
   const computedAvailable = Math.max(0, totalPetsExcludingAdopted);
 
-  // overwrite, so downstream uses already exclude adopted
+  // ✅ Compute approval metrics from payment_proofs
+  const approvedApplicationsTotal = (approvedCountRes as any)?.count ?? 0;
+  const rejectedApplicationsTotal = (rejectedCountRes as any)?.count ?? 0;
+  const totalDecisions = approvedApplicationsTotal + rejectedApplicationsTotal;
+  const approvalRateFromProofs =
+    totalDecisions === 0 ? 0 : Math.round((approvedApplicationsTotal / totalDecisions) * 100);
+
+  // overwrite KPIs
   const kpis: Kpis = {
     ...baseKpis,
     total_pets: totalPetsExcludingAdopted,
     available_pets: computedAvailable,
+    approval_rate: approvalRateFromProofs || baseKpis.approval_rate || 0,
   };
 
   /* ----- Legacy weekly users (keep last 12 for continuity) ----- */
@@ -293,7 +323,9 @@ async function fetchDashboard(
   if (!dailyApprovedMonthRawRes.error && Array.isArray(dailyApprovedMonthRawRes.data)) {
     for (const row of dailyApprovedMonthRawRes.data as { created_at: string }[]) {
       const d = new Date(row.created_at);
-      const label = `${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+      const label = `${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(
+        d.getUTCDate()
+      ).padStart(2, "0")}`;
       if (dailyApprovedMonthMap.has(label)) {
         dailyApprovedMonthMap.set(label, (dailyApprovedMonthMap.get(label) || 0) + 1);
       }
@@ -350,7 +382,8 @@ async function fetchDashboard(
     dailyUsersWeek,
     dailyApprovedWeek,
     topBreedsRaw: rawBreeds,
-    approvedDistinct, // all-time distinct approved pets
+    approvedDistinct, // still available if you need it elsewhere
+    approvedApplicationsTotal, // ✅ KPI for Approved Applications
   };
 }
 
@@ -376,7 +409,7 @@ export default async function AdminDashboard({
     dailyUsersWeek,
     dailyApprovedWeek,
     topBreedsRaw,
-    approvedDistinct,
+    approvedApplicationsTotal,
   } = await fetchDashboard(period, selectedMonth, selectedWeek);
 
   // Month dropdown (last 18 months)
@@ -436,8 +469,7 @@ export default async function AdminDashboard({
         <KpiCard title="Available Pets" value={kpis.available_pets} />
         <KpiCard title="Pending Applications" value={kpis.pending_apps} />
         <KpiCard title="Approval Rate" value={`${kpis.approval_rate}%`} />
-        {/* Removed: <KpiCard title="Total Users" value={kpis.total_users} /> */}
-        <KpiCard title="Approved Applications" value={approvedDistinct} />
+        <KpiCard title="Approved Applications" value={approvedApplicationsTotal} />
       </div>
 
       {/* Filters */}
@@ -513,7 +545,10 @@ export default async function AdminDashboard({
           </>
         )}
 
-        <button type="submit" className="ml-2 text-sm px-3 py-1 rounded-md border border-white/10 hover:bg-white/5">
+        <button
+          type="submit"
+          className="ml-2 text-sm px-3 py-1 rounded-md border border-white/10 hover:bg-white/5"
+        >
           Apply
         </button>
       </form>
