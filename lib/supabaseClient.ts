@@ -19,7 +19,14 @@ export function getSupabaseBrowserClient() {
   }
 
   if (!globalThis.__supabase_browser__) {
-    globalThis.__supabase_browser__ = createBrowserClient(url, anon);
+    globalThis.__supabase_browser__ = createBrowserClient(url, anon, {
+      auth: {
+        // ✅ make sure session stays after refresh
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+      },
+    });
   }
 
   return globalThis.__supabase_browser__;
