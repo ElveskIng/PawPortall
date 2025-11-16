@@ -60,19 +60,27 @@ export default function AddPetPaymentBlock() {
 
   // ✅ loadProofs with optional "silent" flag (no loading text)
   async function loadProofs(options?: { silent?: boolean }) {
-    if (!options?.silent) setLoading(true);
-    try {
-      const r = await fetch("/api/payment-proofs", { cache: "no-store" });
-      const j = (await r.json()) as any;
-      if (Array.isArray(j)) {
-        setProofs(j as Proof[]);
-      }
-    } catch {
-      // ignore, just don't crash UI
-    } finally {
+  if (!options?.silent) setLoading(true);
+  try {
+    // ✅ Check if user is authenticated first
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      setProofs([]);
       if (!options?.silent) setLoading(false);
+      return;
     }
+
+    const r = await fetch("/api/payment-proofs", { cache: "no-store" });
+    const j = (await r.json()) as any;
+    if (Array.isArray(j)) {
+      setProofs(j as Proof[]);
+    }
+  } catch {
+    // ignore, just don't crash UI
+  } finally {
+    if (!options?.silent) setLoading(false);
   }
+}
 
   const hasPending = proofs.some((p) => p.status === "pending");
 

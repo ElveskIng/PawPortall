@@ -1,7 +1,7 @@
 // components/AuthHydrator.tsx
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
 
 type Props = {
@@ -15,7 +15,7 @@ export default function AuthHydrator({
   accessToken,
   refreshToken,
 }: Props) {
-  const supabase = getSupabaseBrowserClient();
+  const supabase = useMemo(() => getSupabaseBrowserClient(), []);
 
   useEffect(() => {
     let cancelled = false;
