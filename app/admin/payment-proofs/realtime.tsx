@@ -1,33 +1,41 @@
-// app/admin/payment-proofs/realtime.tsx
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
 
 /**
  * Live updates for payment_proofs.
  * - Subscribes to Supabase Realtime (INSERT/UPDATE/DELETE)
- * - Polls every 3s as a fallback
+ * - NO polling (relies on realtime + focus refresh only)
  * - Refreshes when tab regains focus
  */
 export default function PaymentProofsRealtime() {
   const supabase = getSupabaseBrowserClient();
   const router = useRouter();
   const qs = useSearchParams();
+  
+  // Prevent multiple refreshes
+  const lastRefresh = useRef(0);
+  const REFRESH_COOLDOWN = 500; // ms
 
   useEffect(() => {
-    let pollId: ReturnType<typeof setInterval> | undefined;
     let debounce: ReturnType<typeof setTimeout> | undefined;
 
     const triggerRefresh = () => {
+      const now = Date.now();
+      if (now - lastRefresh.current < REFRESH_COOLDOWN) {
+        return; // Skip if refreshed recently
+      }
+      
       clearTimeout(debounce);
       debounce = setTimeout(() => {
+        lastRefresh.current = Date.now();
         router.refresh();
-      }, 150); // debounce rapid events
+      }, 150);
     };
 
-    // Realtime
+    // Realtime only (no polling!)
     const channel = supabase
       .channel("pp-payment-proofs")
       .on(
@@ -37,27 +45,21 @@ export default function PaymentProofsRealtime() {
       )
       .subscribe();
 
-    // Polling fallback (every 3s)
-    pollId = setInterval(() => {
-      router.refresh();
-    }, 3000);
-
     // Refresh when user focuses the tab
-    const onFocus = () => router.refresh();
+    const onFocus = () => triggerRefresh();
     const onVis = () => {
-      if (document.visibilityState === "visible") router.refresh();
+      if (document.visibilityState === "visible") triggerRefresh();
     };
+    
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onVis);
 
     return () => {
-      if (pollId) clearInterval(pollId);
       if (debounce) clearTimeout(debounce);
       supabase.removeChannel(channel);
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVis);
     };
-    // include search params so switching pages keeps the subscription active per page
   }, [supabase, router, qs?.toString()]);
 
   return null;
