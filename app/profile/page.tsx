@@ -4,6 +4,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
+import { getSupabaseServerClient } from "@/lib/supabaseServer";
 import { Camera, Check, Copy, Link2, Loader2, Pencil, ShieldCheck } from "lucide-react";
 import IdTypeSelect from "@/components/IdTypeSelect";
 
@@ -148,7 +149,7 @@ function requiresVerification(_p: ProfileRow | null) {
 
 /* ------------------------------- Page ---------------------------- */
 export default function ProfilePage() {
-  const supabase = getSupabaseBrowserClient();
+  const supabase = getSupabaseServerClient();
   const IDS_BUCKET = "id-images";
 
   const [userId, setUserId] = useState<string | null>(null);
