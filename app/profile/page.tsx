@@ -278,7 +278,6 @@ export default function ProfilePage() {
         if (rowErr && rowErr.code !== "PGRST116") {
           console.error("Profile load error:", rowErr);
           setLoadErr(rowErr.message);
-          if (!isMounted) return;
         }
 
         const baseRow: ProfileRow =
@@ -352,7 +351,7 @@ export default function ProfilePage() {
       isMounted = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [supabase]);
 
   //REMOVE | ONLY A TEST
   useEffect(() => {
