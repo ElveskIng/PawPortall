@@ -237,172 +237,255 @@ export default function ProfilePage() {
 
   /* ------------------------------- load -------------------------------- */
   useEffect(() => {
-    let isMounted = true;
+  let isMounted = true;
+  let retryCount = 0;
+  const MAX_RETRIES = 5;
+  const BASE_DELAY = 2000; // 2 seconds
 
-    async function run() {
+  async function run(isRetry = false) {
+    if (!isMounted) return;
+
+    if (isRetry) {
+      console.log(`🔄 Retry attempt ${retryCount}/${MAX_RETRIES}...`);
+    } else {
       console.log('🚀 Starting profile load...');
-      setLoading(true);
-      setLoadErr(null);
+    }
+    
+    setLoading(true);
+    setLoadErr(null);
 
-      try {
-        console.log('🔑 Getting user...');
-        const { data, error } = await supabase.auth.getUser();
-        console.log('👤 User data:', { 
-          userId: data?.user?.id, 
-          email: data?.user?.email,
-          error: error?.message 
-        });
+    try {
+      console.log('🔑 Getting user...');
+      const { data, error } = await supabase.auth.getUser();
+      console.log('👤 User data:', { 
+        userId: data?.user?.id, 
+        email: data?.user?.email,
+        error: error?.message 
+      });
+      
+      if (error) {
+        // Check if it's a rate limit error
+        if (error.message?.includes('rate limit') || error.message?.includes('429')) {
+          throw new Error('RATE_LIMIT');
+        }
+        throw error;
+      }
+      
+      const u = data?.user ?? null;
+
+      if (!u) {
+        console.log('❌ No user found - user not logged in');
         
-        if (error) throw error;
-        const u = data?.user ?? null;
-
-        if (!u) {
-          console.log('❌ No user found - user not logged in');
-          if (!isMounted) return;
-          setUserId(null);
-          setUserEmail(null);
-          setProfile(BLANK_PROFILE);
-          setLoading(false);
+        // Retry if user is null (might be auth not ready yet)
+        if (retryCount < MAX_RETRIES) {
+          retryCount++;
+          const delay = BASE_DELAY * Math.pow(2, retryCount - 1); // Exponential backoff
+          console.log(`⏳ Retrying in ${delay/1000}s...`);
+          
+          setTimeout(() => {
+            if (isMounted) run(true);
+          }, delay);
           return;
         }
+        
+        // Max retries reached
+        if (!isMounted) return;
+        setUserId(null);
+        setUserEmail(null);
+        setProfile(BLANK_PROFILE);
+        setLoadErr("Unable to load user session. Please refresh the page.");
+        setLoading(false);
+        return;
+      }
 
-        console.log('✅ User found:', u.id);
-        if (!isMounted) {
-          console.log('⚠️ Component unmounted after getUser, stopping...');
+      console.log('✅ User found:', u.id);
+      if (!isMounted) {
+        console.log('⚠️ Component unmounted after getUser, stopping...');
+        return;
+      }
+
+      setUserId(u.id);
+      setUserEmail(u.email ?? null);
+
+      console.log('📊 Fetching profile from Supabase...');
+      const { data: rowData, error: rowErr, status: rowStatus } = await supabase
+        .from("profiles")
+        .select(
+          [
+            "id",
+            "full_name",
+            "phone",
+            "bio",
+            "avatar_url",
+            "links",
+            "id_image_url",
+            "created_at",
+          ].join(",")
+        )
+        .eq("id", u.id)
+        .maybeSingle();
+
+      if (rowErr) {
+        console.error('❌ Profile load error:', rowErr);
+        
+        // Check for rate limit
+        if (rowErr.message?.includes('rate limit') || rowStatus === 429) {
+          throw new Error('RATE_LIMIT');
+        }
+        
+        // Retry on error
+        if (retryCount < MAX_RETRIES) {
+          retryCount++;
+          const delay = BASE_DELAY * Math.pow(2, retryCount - 1);
+          console.log(`⏳ Profile fetch failed, retrying in ${delay/1000}s...`);
+          
+          setTimeout(() => {
+            if (isMounted) run(true);
+          }, delay);
           return;
         }
-
-        setUserId(u.id);
-        setUserEmail(u.email ?? null);
-
-        console.log('📊 Fetching profile from Supabase...');
-        const { data: rowData, error: rowErr, status: rowStatus } = await supabase
-          .from("profiles")
-          .select(
-            [
-              "id",
-              "full_name",
-              "phone",
-              "bio",
-              "avatar_url",
-              "links",
-              "id_image_url",
-              "created_at",
-            ].join(",")
-          )
-          .eq("id", u.id)
-          .maybeSingle();
-
-        if (rowErr) {
-          console.error('❌ Profile load error:', rowErr);
-          setLoadErr(rowErr.message || `Profile fetch error (status ${rowStatus})`);
+        
+        setLoadErr(rowErr.message || `Profile fetch error (status ${rowStatus})`);
+      }
+      
+      if (!rowData) {
+        console.warn('⚠️ Profile fetch returned no data.', { status: rowStatus, userId: u.id });
+        
+        // Retry if no data
+        if (retryCount < MAX_RETRIES) {
+          retryCount++;
+          const delay = BASE_DELAY * Math.pow(2, retryCount - 1);
+          console.log(`⏳ No profile data, retrying in ${delay/1000}s...`);
+          
+          setTimeout(() => {
+            if (isMounted) run(true);
+          }, delay);
+          return;
         }
-        if (!rowData) {
-          console.warn('⚠️ Profile fetch returned no data.', { status: rowStatus, userId: u.id });
-          setLoadErr(`No profile data found for user ${u.id}.`);
-        }
+        
+        setLoadErr(`No profile data found for user ${u.id}.`);
+      }
 
-        // Log full response for diagnostics
-        console.log('📦 Profile query result:', { 
-          hasData: !!rowData, 
-          errorCode: rowErr?.code,
-          errorMessage: rowErr?.message,
-          status: rowStatus,
-          rawData: rowData 
-        });
+      console.log('📦 Profile query result:', { 
+        hasData: !!rowData, 
+        errorCode: rowErr?.code,
+        errorMessage: rowErr?.message,
+        status: rowStatus,
+        rawData: rowData 
+      });
 
-        const baseRow: ProfileRow =
-          (rowData as any) ?? {
-            id: u.id,
-            full_name: null,
-            phone: null,
-            bio: null,
-            avatar_url: null,
-            links: [],
-            id_image_url: null,
-            created_at: null,
-          };
-
-        console.log('🔧 Base row:', baseRow);
-
-        let links: ProfileLink[] | null = baseRow.links;
-        if (typeof baseRow.links === "string") {
-          try {
-            const parsed = JSON.parse(baseRow.links) as any;
-            links = Array.isArray(parsed) ? parsed : [];
-            console.log('🔗 Parsed links from string:', links);
-          } catch (e) {
-            console.warn('⚠️ Failed to parse links, defaulting to []', e);
-            links = [];
-          }
-        }
-
-        const fixedRow: ProfileRow = {
-          ...baseRow,
-          links,
-          id_image_url: baseRow.id_image_url ?? null,
+      const baseRow: ProfileRow =
+        (rowData as any) ?? {
+          id: u.id,
+          full_name: null,
+          phone: null,
+          bio: null,
+          avatar_url: null,
+          links: [],
+          id_image_url: null,
+          created_at: null,
         };
 
-        console.log('✅ Fixed row ready:', fixedRow);
+      console.log('🔧 Base row:', baseRow);
 
-        if (!isMounted) {
-          console.log('⚠️ Component unmounted before setState');
-          return;
-        }
-
-        console.log('💾 Setting profile state...');
-        setProfile(fixedRow);
-
-        // pre-fill edit fields
-        console.log('📝 Pre-filling edit fields...');
-        setEditFullName(fixedRow.full_name ?? "");
-        setEditPhone(fixedRow.phone ?? "");
-
-        const parsed = parseBio(fixedRow.bio);
-        setEditFullAddress(parsed.address || "");
-        setEditIdType(parsed.idType || "");
-        setEditIdNumber(parsed.idNumber || "");
-        setEditAbout(parsed.about || "");
-
-        const fb = (links || []).find(
-          (l) =>
-            (l.label || "").toLowerCase() === "facebook" ||
-            /facebook\.com|fb\.com/i.test(l.url || "")
-        );
-        const ig = (links || []).find(
-          (l) =>
-            (l.label || "").toLowerCase() === "instagram" ||
-            /instagram\.com/i.test(l.url || "")
-        );
-        setFbUrl(fb?.url ? stripProtocol(fb.url) : "");
-        setIgUrl(ig?.url ? stripProtocol(ig.url) : "");
-
-        setVerifyOpen(false);
-        
-        console.log('✅ Profile load complete!');
-
-      } catch (err) {
-        console.error('💥 Fatal error in profile load:', err);
-        if (!isMounted) return;
-        setLoadErr(errorMessage(err, "Could not load your profile."));
-        setProfile(BLANK_PROFILE);
-      } finally {
-        if (isMounted) {
-          console.log('🏁 Setting loading to false');
-          setLoading(false);
-        } else {
-          console.log('⚠️ Component unmounted, skipping loading=false');
+      let links: ProfileLink[] | null = baseRow.links;
+      if (typeof baseRow.links === "string") {
+        try {
+          const parsed = JSON.parse(baseRow.links) as any;
+          links = Array.isArray(parsed) ? parsed : [];
+          console.log('🔗 Parsed links from string:', links);
+        } catch (e) {
+          console.warn('⚠️ Failed to parse links, defaulting to []', e);
+          links = [];
         }
       }
+
+      const fixedRow: ProfileRow = {
+        ...baseRow,
+        links,
+        id_image_url: baseRow.id_image_url ?? null,
+      };
+
+      console.log('✅ Fixed row ready:', fixedRow);
+
+      if (!isMounted) {
+        console.log('⚠️ Component unmounted before setState');
+        return;
+      }
+
+      console.log('💾 Setting profile state...');
+      setProfile(fixedRow);
+
+      // pre-fill edit fields
+      console.log('📝 Pre-filling edit fields...');
+      setEditFullName(fixedRow.full_name ?? "");
+      setEditPhone(fixedRow.phone ?? "");
+
+      const parsed = parseBio(fixedRow.bio);
+      setEditFullAddress(parsed.address || "");
+      setEditIdType(parsed.idType || "");
+      setEditIdNumber(parsed.idNumber || "");
+      setEditAbout(parsed.about || "");
+
+      const fb = (links || []).find(
+        (l) =>
+          (l.label || "").toLowerCase() === "facebook" ||
+          /facebook\.com|fb\.com/i.test(l.url || "")
+      );
+      const ig = (links || []).find(
+        (l) =>
+          (l.label || "").toLowerCase() === "instagram" ||
+          /instagram\.com/i.test(l.url || "")
+      );
+      setFbUrl(fb?.url ? stripProtocol(fb.url) : "");
+      setIgUrl(ig?.url ? stripProtocol(ig.url) : "");
+
+      setVerifyOpen(false);
+      
+      console.log('✅ Profile load complete!');
+      retryCount = 0; // Reset on success
+
+    } catch (err: any) {
+      console.error('💥 Fatal error in profile load:', err);
+      if (!isMounted) return;
+      
+      // Handle rate limit specially
+      if (err.message === 'RATE_LIMIT') {
+        if (retryCount < MAX_RETRIES) {
+          retryCount++;
+          const delay = BASE_DELAY * Math.pow(2, retryCount); // Longer delay for rate limits
+          console.log(`⏳ Rate limit hit! Waiting ${delay/1000}s before retry...`);
+          setLoadErr(`Rate limit reached. Retrying in ${delay/1000} seconds... (${retryCount}/${MAX_RETRIES})`);
+          
+          setTimeout(() => {
+            if (isMounted) run(true);
+          }, delay);
+          return;
+        }
+        
+        setLoadErr("Rate limit exceeded. Please wait a few minutes and refresh the page.");
+      } else {
+        setLoadErr(errorMessage(err, "Could not load your profile."));
+      }
+      
+      setProfile(BLANK_PROFILE);
+    } finally {
+      if (isMounted) {
+        console.log('🏁 Setting loading to false');
+        setLoading(false);
+      } else {
+        console.log('⚠️ Component unmounted, skipping loading=false');
+      }
     }
+  }
 
-    run();
+  run();
 
-    return () => {
-      console.log('🧹 Component cleanup - setting isMounted = false');
-      isMounted = false;
-    };
-  }, []);
+  return () => {
+    console.log('🧹 Component cleanup - setting isMounted = false');
+    isMounted = false;
+  };
+}, [supabase]);
 
   //REMOVE | ONLY A TEST
   useEffect(() => {
