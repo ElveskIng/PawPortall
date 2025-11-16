@@ -276,7 +276,7 @@ export default function ProfilePage() {
         setUserEmail(u.email ?? null);
 
         console.log('📊 Fetching profile from Supabase...');
-        const { data: rowData, error: rowErr } = await supabase
+        const { data: rowData, error: rowErr, status: rowStatus } = await supabase
           .from("profiles")
           .select(
             [
@@ -293,17 +293,23 @@ export default function ProfilePage() {
           .eq("id", u.id)
           .maybeSingle();
 
+        if (rowErr) {
+          console.error('❌ Profile load error:', rowErr);
+          setLoadErr(rowErr.message || `Profile fetch error (status ${rowStatus})`);
+        }
+        if (!rowData) {
+          console.warn('⚠️ Profile fetch returned no data.', { status: rowStatus, userId: u.id });
+          setLoadErr(`No profile data found for user ${u.id}.`);
+        }
+
+        // Log full response for diagnostics
         console.log('📦 Profile query result:', { 
           hasData: !!rowData, 
           errorCode: rowErr?.code,
           errorMessage: rowErr?.message,
+          status: rowStatus,
           rawData: rowData 
         });
-
-        if (rowErr && rowErr.code !== "PGRST116") {
-          console.error('❌ Profile load error:', rowErr);
-          setLoadErr(rowErr.message);
-        }
 
         const baseRow: ProfileRow =
           (rowData as any) ?? {
@@ -325,8 +331,8 @@ export default function ProfilePage() {
             const parsed = JSON.parse(baseRow.links) as any;
             links = Array.isArray(parsed) ? parsed : [];
             console.log('🔗 Parsed links from string:', links);
-          } catch {
-            console.warn('⚠️ Failed to parse links, defaulting to []');
+          } catch (e) {
+            console.warn('⚠️ Failed to parse links, defaulting to []', e);
             links = [];
           }
         }
@@ -378,7 +384,6 @@ export default function ProfilePage() {
       } catch (err) {
         console.error('💥 Fatal error in profile load:', err);
         if (!isMounted) return;
-        console.error("Profile load fatal error:", err);
         setLoadErr(errorMessage(err, "Could not load your profile."));
         setProfile(BLANK_PROFILE);
       } finally {
