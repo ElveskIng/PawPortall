@@ -1,6 +1,7 @@
 "use client";
 
 import { createBrowserClient } from "@supabase/ssr";
+import { trackRequest } from "./requestMonitor";
 
 // Singleton to prevent multiple client instances
 declare global {
@@ -9,6 +10,7 @@ declare global {
 }
 
 export function getSupabaseBrowserClient() {
+  trackRequest();
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
