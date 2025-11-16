@@ -148,7 +148,7 @@ function requiresVerification(_p: ProfileRow | null) {
 
 /* ------------------------------- Page ---------------------------- */
 export default function ProfilePage() {
-  const supabase = getSupabaseBrowserClient();
+  const supabase = useMemo(() => getSupabaseBrowserClient(), []);
   const IDS_BUCKET = "id-images";
 
   const [userId, setUserId] = useState<string | null>(null);

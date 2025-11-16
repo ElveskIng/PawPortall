@@ -15,7 +15,7 @@ import {
   User as UserIcon,
   Bell, // 🔔 for admin payments
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
 import NotificationBell from "@/components/NotificationBell";
 import { useTheme } from "next-themes";
@@ -34,7 +34,7 @@ type Profile = {
 export default function Navbar() {
   const pathname = usePathname();
   const router = useRouter();
-  const supabase = getSupabaseBrowserClient();
+  const supabase = useMemo(() => getSupabaseBrowserClient(), []);
   const { theme, setTheme } = useTheme();
 
   const [user, setUser] = useState<User | null>(null);
@@ -509,7 +509,7 @@ type PaymentNotif = {
 };
 
 function AdminPaymentsBell() {
-  const supabase = getSupabaseBrowserClient();
+  const supabase = useMemo(() => getSupabaseBrowserClient(), []);
   const router = useRouter();
 
   const [pendingCount, setPendingCount] = useState<number | null>(null);

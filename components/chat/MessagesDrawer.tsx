@@ -4,6 +4,7 @@
 import * as React from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
+import { useMemo } from "react";
 
 type Convo = {
   id: string;
@@ -31,7 +32,7 @@ const getActiveConvo = (): string | null => {
 export default function MessagesDrawer() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const supabase = getSupabaseBrowserClient();
+  const supabase = useMemo(() => getSupabaseBrowserClient(), []);
 
   const [open, setOpen] = React.useState(false);
   const [loading, setLoading] = React.useState(true);
