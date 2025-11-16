@@ -59,21 +59,62 @@ export default function SignInPage() {
     setLoading(true);
     setError(null);
 
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    try {
+      // ✅ Get the full session data
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
 
-    setLoading(false);
+      if (error) {
+        console.error(error.message);
+        setLoading(false);
+        return;
+      }
 
-    if (error) {
-      setError(error.message);
-      return;
+      if (!data.session) {
+        console.error("Sign-in succeeded but no session was created. Please try again.");
+        setLoading(false);
+        return;
+      }
+
+      console.log('✅ Sign-in successful, session received');
+
+      // ✅ CRITICAL: Explicitly set the session to ensure it's persisted
+      const { error: setError } = await supabase.auth.setSession({
+        access_token: data.session.access_token,
+        refresh_token: data.session.refresh_token,
+      });
+
+      if (setError) {
+        console.error(setError.message);
+        setLoading(false);
+        return;
+      }
+
+      console.log('✅ Session persisted to localStorage');
+
+      // ✅ Wait a tiny bit for localStorage write to complete
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      // ✅ Verify session is actually in storage
+      const { data: { session: verifySession } } = await supabase.auth.getSession();
+      if (!verifySession) {
+        console.error('❌ Session not found after setSession!');
+        console.error("Session could not be saved. Please try again.");
+        setLoading(false);
+        return;
+      }
+
+      console.log('✅ Session verified, redirecting...');
+      
+      // Now it's safe to redirect
+      hardRedirect(next);
+    } catch (err: any) {
+      console.error('❌ Sign-in error:', err);
+      setError(err?.message || "An unexpected error occurred");
+      setLoading(false);
     }
-
-    // Make sure the session is persisted before we leave
-    await supabase.auth.getSession();
-    hardRedirect(next);
   };
 
   return (

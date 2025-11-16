@@ -1,7 +1,6 @@
-// components/AuthHydrator.tsx
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
 
 type Props = {
@@ -16,40 +15,72 @@ export default function AuthHydrator({
   refreshToken,
 }: Props) {
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
+  const syncedRef = useRef(false); // ✅ Prevent multiple syncs
 
   useEffect(() => {
     let cancelled = false;
 
     const sync = async () => {
-      // user na nakikita ng browser ngayon
+      if (syncedRef.current) {
+        console.log('⏭️ AuthHydrator: Already synced, skipping');
+        return;
+      }
+
+      console.log('🔄 AuthHydrator: Starting sync...', {
+        serverUserId,
+        hasAccessToken: !!accessToken,
+      });
+
+      // Get current browser session
       const {
-        data: { user: clientUser },
-      } = await supabase.auth.getUser();
+        data: { session: clientSession },
+      } = await supabase.auth.getSession();
 
-      const clientUserId = clientUser?.id ?? null;
+      const clientUserId = clientSession?.user?.id ?? null;
 
-      // CASE 1: wala sa server pero meron sa browser → i-logout browser
+      console.log('🔍 AuthHydrator: Current state', {
+        clientUserId,
+        serverUserId,
+        match: clientUserId === serverUserId,
+      });
+
+      // CASE 1: No user on server but exists in browser → sign out
       if (!serverUserId && clientUserId) {
+        console.log('🚪 AuthHydrator: Signing out (no server user)');
         if (!cancelled) {
           await supabase.auth.signOut();
+          syncedRef.current = true;
         }
         return;
       }
 
-      // CASE 2: may user sa server, pero iba yung nasa browser → gamitin natin yung session ng server
+      // CASE 2: Server user exists but different from browser → set server session
       if (
         serverUserId &&
         serverUserId !== clientUserId &&
-        accessToken /* siguraduhin may token */
+        accessToken &&
+        refreshToken
       ) {
+        console.log('🔐 AuthHydrator: Setting server session');
         if (!cancelled) {
-          await supabase.auth.setSession({
+          const { error } = await supabase.auth.setSession({
             access_token: accessToken,
-            refresh_token: refreshToken ?? "",
+            refresh_token: refreshToken,
           });
+
+          if (error) {
+            console.error('❌ AuthHydrator: Failed to set session', error);
+          } else {
+            console.log('✅ AuthHydrator: Session set successfully');
+            syncedRef.current = true;
+          }
         }
+        return;
       }
-      // CASE 3: pareho → wala tayong gagawin
+
+      // CASE 3: Match or no action needed
+      console.log('✅ AuthHydrator: No sync needed');
+      syncedRef.current = true;
     };
 
     void sync();
