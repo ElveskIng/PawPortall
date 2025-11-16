@@ -240,46 +240,68 @@ export default function ProfilePage() {
     let isMounted = true;
 
     async function run() {
+      console.log('🚀 Starting profile load...');
       setLoading(true);
       setLoadErr(null);
 
       try {
+        console.log('🔑 Getting user...');
         const { data, error } = await supabase.auth.getUser();
+        console.log('👤 User data:', { 
+          userId: data?.user?.id, 
+          email: data?.user?.email,
+          error: error?.message 
+        });
+        
         if (error) throw error;
         const u = data?.user ?? null;
 
         if (!u) {
+          console.log('❌ No user found - user not logged in');
           if (!isMounted) return;
           setUserId(null);
           setUserEmail(null);
           setProfile(BLANK_PROFILE);
+          setLoading(false);
           return;
         }
 
-        if (!isMounted) return;
+        console.log('✅ User found:', u.id);
+        if (!isMounted) {
+          console.log('⚠️ Component unmounted after getUser, stopping...');
+          return;
+        }
 
         setUserId(u.id);
         setUserEmail(u.email ?? null);
 
+        console.log('📊 Fetching profile from Supabase...');
         const { data: rowData, error: rowErr } = await supabase
-        .from("profiles")
-        .select(
-          [
-            "id",
-            "full_name",
-            "phone",
-            "bio",
-            "avatar_url",
-            "links",
-            "id_image_url",
-            "created_at",
-          ].join(",")
-        )
-        .eq("id", u.id)
-        .maybeSingle();
+          .from("profiles")
+          .select(
+            [
+              "id",
+              "full_name",
+              "phone",
+              "bio",
+              "avatar_url",
+              "links",
+              "id_image_url",
+              "created_at",
+            ].join(",")
+          )
+          .eq("id", u.id)
+          .maybeSingle();
+
+        console.log('📦 Profile query result:', { 
+          hasData: !!rowData, 
+          errorCode: rowErr?.code,
+          errorMessage: rowErr?.message,
+          rawData: rowData 
+        });
 
         if (rowErr && rowErr.code !== "PGRST116") {
-          console.error("Profile load error:", rowErr);
+          console.error('❌ Profile load error:', rowErr);
           setLoadErr(rowErr.message);
         }
 
@@ -295,12 +317,16 @@ export default function ProfilePage() {
             created_at: null,
           };
 
+        console.log('🔧 Base row:', baseRow);
+
         let links: ProfileLink[] | null = baseRow.links;
         if (typeof baseRow.links === "string") {
           try {
             const parsed = JSON.parse(baseRow.links) as any;
             links = Array.isArray(parsed) ? parsed : [];
+            console.log('🔗 Parsed links from string:', links);
           } catch {
+            console.warn('⚠️ Failed to parse links, defaulting to []');
             links = [];
           }
         }
@@ -311,11 +337,18 @@ export default function ProfilePage() {
           id_image_url: baseRow.id_image_url ?? null,
         };
 
-        if (!isMounted) return;
+        console.log('✅ Fixed row ready:', fixedRow);
 
+        if (!isMounted) {
+          console.log('⚠️ Component unmounted before setState');
+          return;
+        }
+
+        console.log('💾 Setting profile state...');
         setProfile(fixedRow);
 
         // pre-fill edit fields
+        console.log('📝 Pre-filling edit fields...');
         setEditFullName(fixedRow.full_name ?? "");
         setEditPhone(fixedRow.phone ?? "");
 
@@ -339,22 +372,31 @@ export default function ProfilePage() {
         setIgUrl(ig?.url ? stripProtocol(ig.url) : "");
 
         setVerifyOpen(false);
+        
+        console.log('✅ Profile load complete!');
+
       } catch (err) {
+        console.error('💥 Fatal error in profile load:', err);
         if (!isMounted) return;
         console.error("Profile load fatal error:", err);
         setLoadErr(errorMessage(err, "Could not load your profile."));
         setProfile(BLANK_PROFILE);
       } finally {
-        if (isMounted) setLoading(false);
+        if (isMounted) {
+          console.log('🏁 Setting loading to false');
+          setLoading(false);
+        } else {
+          console.log('⚠️ Component unmounted, skipping loading=false');
+        }
       }
     }
 
     run();
 
     return () => {
+      console.log('🧹 Component cleanup - setting isMounted = false');
       isMounted = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   //REMOVE | ONLY A TEST
