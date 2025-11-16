@@ -353,6 +353,15 @@ export default function ProfilePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [supabase]);
 
+  //REMOVE | ONLY A TEST
+  useEffect(() => {
+  console.log('🔍 Profile state changed:', {
+    id: profile?.id,
+    name: profile?.full_name,
+    phone: profile?.phone,
+  });
+}, [profile]);
+
   const avatarSrc = useMemo(() => {
     if (!profile?.avatar_url) return null;
     return profile.avatar_url.includes("?")
