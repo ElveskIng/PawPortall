@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getSupabaseBrowserClient } from "@/lib/supabaseBrowser";
+import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
 import { v4 as uuidv4 } from "uuid";
 
 type Proof = {
