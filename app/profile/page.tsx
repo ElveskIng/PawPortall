@@ -20,6 +20,7 @@ type ProfileRow = {
   id_image_url: string | null;
   email?: string | null;
   updated_at?: string | null;
+  created_at?: string | null;
 };
 
 type PartialProfileRow = Partial<ProfileRow> & { id: string };
@@ -35,6 +36,7 @@ const BLANK_PROFILE: ProfileRow = {
   id_image_url: null,
   email: null,
   updated_at: null,
+  created_at: null,
 };
 
 /* ---------------------------- Helpers ---------------------------- */
@@ -260,20 +262,21 @@ export default function ProfilePage() {
         setUserEmail(u.email ?? null);
 
         const { data: rowData, error: rowErr } = await supabase
-          .from("profiles")
-          .select(
-            [
-              "id",
-              "full_name",
-              "phone",
-              "bio",
-              "avatar_url",
-              "links",
-              "id_image_url",
-            ].join(",")
-          )
-          .eq("id", u.id)
-          .maybeSingle();
+        .from("profiles")
+        .select(
+          [
+            "id",
+            "full_name",
+            "phone",
+            "bio",
+            "avatar_url",
+            "links",
+            "id_image_url",
+            "created_at",
+          ].join(",")
+        )
+        .eq("id", u.id)
+        .maybeSingle();
 
         if (rowErr && rowErr.code !== "PGRST116") {
           console.error("Profile load error:", rowErr);
@@ -289,6 +292,7 @@ export default function ProfilePage() {
             avatar_url: null,
             links: [],
             id_image_url: null,
+            created_at: null,
           };
 
         let links: ProfileLink[] | null = baseRow.links;
@@ -692,7 +696,11 @@ export default function ProfilePage() {
 
             <div className="text-sm text-gray-500">
               Member since{" "}
-              <span className="font-medium">{new Date().toLocaleDateString()}</span>
+              <span className="font-medium">
+                {profile.created_at 
+                  ? new Date(profile.created_at).toLocaleDateString() 
+                  : "N/A"}
+              </span>
             </div>
 
             <div className="mt-3 flex items-center gap-2 flex-wrap">
