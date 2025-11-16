@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
 import { LogOut } from "lucide-react";
+import { useMemo } from "react";
 
 type ProfileFlags = {
   is_suspended?: boolean | null;
@@ -20,7 +21,7 @@ function daysLeft(untilIso?: string | null) {
 }
 
 export default function SuspensionGate() {
-  const supabase = getSupabaseBrowserClient();
+  const supabase = useMemo(() => getSupabaseBrowserClient(), []);
   const [blocking, setBlocking] = useState(false);
   const [left, setLeft] = useState(0);
   const [until, setUntil] = useState<string | null>(null);

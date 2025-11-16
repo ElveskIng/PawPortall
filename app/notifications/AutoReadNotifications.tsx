@@ -3,10 +3,11 @@
 
 import { useEffect } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
+import { useMemo } from "react";
 
 export default function AutoReadNotifications() {
   useEffect(() => {
-    const supabase = getSupabaseBrowserClient();
+    const supabase = useMemo(() => getSupabaseBrowserClient(), []);;
 
     (async () => {
       const {

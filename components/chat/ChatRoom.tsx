@@ -28,7 +28,7 @@ export default function ChatRoom({
   currentUserId: string;
   initialMessages: Message[];
 }) {
-  const supabase = getSupabaseBrowserClient();
+  const supabase = useMemo(() => getSupabaseBrowserClient(), []);;
   const [messages, setMessages] = useState<Message[]>(initialMessages || []);
   const [text, setText] = useState("");
   const listRef = useRef<HTMLDivElement>(null);
@@ -192,29 +192,6 @@ export default function ChatRoom({
       supabase.removeChannel(bc);
     };
   }, [conversationId, currentUserId, supabase]);
-
-  useEffect(() => {
-    let stop = false;
-    async function poll() {
-      try {
-        const q = supabase
-          .from("messages")
-          .select("id, conversation_id, sender_id, body, created_at")
-          .eq("conversation_id", conversationId)
-          .order("created_at", { ascending: true });
-        const { data } = lastTs ? await q.gt("created_at", lastTs) : await q;
-        (data || []).forEach((m) => pushUnique(m as Message));
-        if ((data || []).length) markReadNow();
-      } catch {}
-    }
-    const id = setInterval(() => {
-      if (!stop) poll();
-    }, 3000);
-    return () => {
-      stop = true;
-      clearInterval(id);
-    };
-  }, [conversationId, lastTs, supabase]);
 
   useEffect(() => {
     const el = listRef.current;

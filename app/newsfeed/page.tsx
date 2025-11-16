@@ -69,7 +69,7 @@ function timeAgo(iso?: string | null) {
 const idsKey = (arr: { id: string }[]) => arr.map((p) => p.id).join(",");
 
 export default function NewsfeedPage() {
-  const supabase = getSupabaseBrowserClient() as any;
+  const supabase = useMemo(() => getSupabaseBrowserClient(), []) as any;
 
   /* ---------- auth & profile ---------- */
   const [user, setUser] = useState<User | null>(null);

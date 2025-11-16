@@ -79,7 +79,7 @@ const toneOf = (t?: string | null): "rose" | "green" | "indigo" | "gray" => {
 
 /* ───────────── Component ───────────── */
 export default function NotificationBell() {
-  const supabase = getSupabaseBrowserClient();
+  const supabase = useMemo(() => getSupabaseBrowserClient(), []);;
   const pathname = usePathname();
   const router = useRouter();
 

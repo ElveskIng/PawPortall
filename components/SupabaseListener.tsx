@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect } from "react";
+import { useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
 
 export default function SupabaseListener() {
-  const supabase = getSupabaseBrowserClient();
+  const supabase = useMemo(() => getSupabaseBrowserClient(), []);
   const router = useRouter();
 
   useEffect(() => {

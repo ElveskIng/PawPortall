@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
 import { v4 as uuidv4 } from "uuid";
+import { useMemo } from "react";
 
 type Proof = {
   id: string;
@@ -15,7 +16,7 @@ type Proof = {
 };
 
 export default function ManualProofForm() {
-  const supa = getSupabaseBrowserClient();
+  const supa = useMemo(() => getSupabaseBrowserClient(), []);
   const [file, setFile] = useState<File | null>(null);
   const [amount, setAmount] = useState("");
   const [reference, setReference] = useState("");

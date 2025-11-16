@@ -4,13 +4,14 @@
 import { useState } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
 import { Flag, Loader2, X } from "lucide-react";
+import { useMemo } from "react";
 
 export default function ReportUserButton({
   reportedUserId,
 }: {
   reportedUserId: string;
 }) {
-  const supabase = getSupabaseBrowserClient();
+  const supabase = useMemo(() => getSupabaseBrowserClient(), []);
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState("Spam or misleading");
   const [notes, setNotes] = useState("");

@@ -6,9 +6,10 @@ import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
 import type { AuthChangeEvent, Session } from "@supabase/supabase-js";
+import { useMemo } from "react";
 
 export default function SignInPage() {
-  const supabase = getSupabaseBrowserClient();
+  const supabase = useMemo(() => getSupabaseBrowserClient(), []);;
   const search = useSearchParams();
 
   const next = decodeURIComponent(search.get("next") || "/dashboard");

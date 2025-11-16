@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useMemo } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
 
 type Proof = {
@@ -49,7 +50,7 @@ export default function AddPetPaymentBlock() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const qrSrc = process.env.NEXT_PUBLIC_GCASH_QR_URL || "/gcash-qr.png";
 
-  const supabase = getSupabaseBrowserClient();
+  const supabase = useMemo(() => getSupabaseBrowserClient(), []);
   const userIdRef = useRef<string | null>(null);
 
   function openDialog(title: string, body: string) {
