@@ -1,5 +1,5 @@
 import { cookies } from "next/headers";
-import { createServerClient, createBrowserClient } from "@supabase/ssr";
+import { createServerClient } from "@supabase/ssr";
 
 export function getSupabaseServerClient() {
   const cookieStore = cookies();
@@ -16,17 +16,11 @@ export function getSupabaseServerClient() {
             cookiesToSet.forEach(({ name, value, options }) =>
               cookieStore.set(name, value, options)
             );
-          } catch {}
+          } catch {
+            // Ignore cookie errors in middleware
+          }
         },
       },
     }
-  );
-}
-
-/** 👉 Needed by your sign-in / sign-up client pages */
-export function getSupabaseBrowserClient() {
-  return createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   );
 }
