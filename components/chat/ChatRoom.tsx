@@ -329,7 +329,7 @@ export default function ChatRoom({
     try {
       await supabase
         .from("message_hides")
-        .upsert({ message_id: id, user_id: currentUserId });
+        .upsert({ message_id: id, user_id: currentUserId } as any);
     } catch {}
   }
   function openConfirm(id: string) {
