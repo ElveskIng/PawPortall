@@ -1,7 +1,6 @@
 "use client";
 
 import { createBrowserClient } from "@supabase/ssr";
-import { trackRequest } from "./requestMonitor";
 
 // Singleton to prevent multiple client instances
 declare global {
@@ -9,16 +8,14 @@ declare global {
   var __supabase_browser__: ReturnType<typeof createBrowserClient> | undefined;
 }
 
+/**
+ * Returns a singleton Supabase browser client.
+ * DO NOT use this function to track API requests.
+ * Only call trackRequest() in your actual data-fetching functions.
+ */
 export function getSupabaseBrowserClient() {
-  trackRequest();
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-  console.log('🔧 Supabase Browser Client Init:', {
-    hasUrl: !!url,
-    hasAnon: !!anon,
-    existing: !!globalThis.__supabase_browser__
-  });
 
   if (!url || !anon) {
     throw new Error(
