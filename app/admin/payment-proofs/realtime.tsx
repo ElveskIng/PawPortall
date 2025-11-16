@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
 
@@ -12,7 +11,7 @@ import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
  * - Refreshes when tab regains focus
  */
 export default function PaymentProofsRealtime() {
-  const supabase = useMemo(() => getSupabaseBrowserClient(), []);
+  const supabase = getSupabaseBrowserClient();
   const router = useRouter();
   const qs = useSearchParams();
   

@@ -1,8 +1,7 @@
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
-import { useMemo } from "react";
 
 export async function uploadPetPhotos(petId: string, files: File[]) {
-  const supabase = useMemo(() => getSupabaseBrowserClient(), []);
+  const supabase = getSupabaseBrowserClient();
   const bucket = "pets"; // change if your bucket name differs
   const uploadedPaths: string[] = [];
 

@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
 import { Loader2, Mail } from "lucide-react";
-import { useMemo } from "react";
 
 type Props = {
   defaultEmail?: string | null;
@@ -11,7 +10,7 @@ type Props = {
 };
 
 export default function ResetPasswordDialog({ defaultEmail, onDone }: Props) {
-  const supabase = useMemo(() => getSupabaseBrowserClient(), []);
+  const supabase = getSupabaseBrowserClient();
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState(defaultEmail ?? "");
   const [sending, setSending] = useState(false);

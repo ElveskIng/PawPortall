@@ -2,13 +2,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
 import type { AuthChangeEvent, Session } from "@supabase/supabase-js";
 
 export default function ConfirmPage() {
-  const supabase = useMemo(() => getSupabaseBrowserClient(), []);
+  const supabase = getSupabaseBrowserClient();
   const router = useRouter();
   const search = useSearchParams();
 

@@ -3,7 +3,6 @@
 
 import { useEffect } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
-import { useMemo } from "react";
 
 type Props = {
   serverUserId: string | null;
@@ -16,7 +15,7 @@ export default function AuthHydrator({
   accessToken,
   refreshToken,
 }: Props) {
-  const supabase = useMemo(() => getSupabaseBrowserClient(), []);
+  const supabase = getSupabaseBrowserClient();
 
   useEffect(() => {
     let cancelled = false;

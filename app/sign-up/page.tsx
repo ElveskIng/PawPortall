@@ -5,12 +5,11 @@ import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
-import { useMemo } from "react";
 
 type Status = { type: "idle" | "loading" | "success" | "error"; message?: string };
 
 export default function SignUpPage() {
-  const supabase = useMemo(() => getSupabaseBrowserClient(), []);;
+  const supabase = getSupabaseBrowserClient();
   const router = useRouter();
   const search = useSearchParams();
   // We’ll still read ?next= if you ever want to override,

@@ -4,7 +4,6 @@
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
-import { useMemo } from "react";
 
 /**
  * Handles both:
@@ -17,7 +16,7 @@ import { useMemo } from "react";
  * then tries to window.close(), or redirects as fallback.
  */
 export default function AuthCallback() {
-  const supabase = useMemo(() => getSupabaseBrowserClient(), []);;
+  const supabase = getSupabaseBrowserClient();
   const router = useRouter();
   const search = useSearchParams();
 

@@ -237,36 +237,169 @@ export default function ProfilePage() {
 
   /* ------------------------------- load -------------------------------- */
   useEffect(() => {
-  let isMounted = true;
-  let isRunning = false; // ✅ Prevent concurrent runs
+    let isMounted = true;
 
-  async function run() {
-    if (isRunning) {
-      console.log('⏭️ Skipping - already running');
-      return;
-    }
-    
-    isRunning = true;
-    console.log('🚀 Starting profile load...');
-    setLoading(true);
-    setLoadErr(null);
+    async function run() {
+      console.log('🚀 Starting profile load...');
+      setLoading(true);
+      setLoadErr(null);
 
-    try {
-      // Your existing code...
-      
-    } catch (err) {
-      // Your error handling...
-    } finally {
-      if (isMounted) {
-        setLoading(false);
+      try {
+        console.log('🔑 Getting user...');
+        const { data, error } = await supabase.auth.getUser();
+        console.log('👤 User data:', { 
+          userId: data?.user?.id, 
+          email: data?.user?.email,
+          error: error?.message 
+        });
+        
+        if (error) throw error;
+        const u = data?.user ?? null;
+
+        if (!u) {
+          console.log('❌ No user found - user not logged in');
+          if (!isMounted) return;
+          setUserId(null);
+          setUserEmail(null);
+          setProfile(BLANK_PROFILE);
+          setLoading(false);
+          return;
+        }
+
+        console.log('✅ User found:', u.id);
+        if (!isMounted) {
+          console.log('⚠️ Component unmounted after getUser, stopping...');
+          return;
+        }
+
+        setUserId(u.id);
+        setUserEmail(u.email ?? null);
+
+        console.log('📊 Fetching profile from Supabase...');
+        const { data: rowData, error: rowErr, status: rowStatus } = await supabase
+          .from("profiles")
+          .select(
+            [
+              "id",
+              "full_name",
+              "phone",
+              "bio",
+              "avatar_url",
+              "links",
+              "id_image_url",
+              "created_at",
+            ].join(",")
+          )
+          .eq("id", u.id)
+          .maybeSingle();
+
+        if (rowErr) {
+          console.error('❌ Profile load error:', rowErr);
+          setLoadErr(rowErr.message || `Profile fetch error (status ${rowStatus})`);
+        }
+        if (!rowData) {
+          console.warn('⚠️ Profile fetch returned no data.', { status: rowStatus, userId: u.id });
+          setLoadErr(`No profile data found for user ${u.id}.`);
+        }
+
+        // Log full response for diagnostics
+        console.log('📦 Profile query result:', { 
+          hasData: !!rowData, 
+          errorCode: rowErr?.code,
+          errorMessage: rowErr?.message,
+          status: rowStatus,
+          rawData: rowData 
+        });
+
+        const baseRow: ProfileRow =
+          (rowData as any) ?? {
+            id: u.id,
+            full_name: null,
+            phone: null,
+            bio: null,
+            avatar_url: null,
+            links: [],
+            id_image_url: null,
+            created_at: null,
+          };
+
+        console.log('🔧 Base row:', baseRow);
+
+        let links: ProfileLink[] | null = baseRow.links;
+        if (typeof baseRow.links === "string") {
+          try {
+            const parsed = JSON.parse(baseRow.links) as any;
+            links = Array.isArray(parsed) ? parsed : [];
+            console.log('🔗 Parsed links from string:', links);
+          } catch (e) {
+            console.warn('⚠️ Failed to parse links, defaulting to []', e);
+            links = [];
+          }
+        }
+
+        const fixedRow: ProfileRow = {
+          ...baseRow,
+          links,
+          id_image_url: baseRow.id_image_url ?? null,
+        };
+
+        console.log('✅ Fixed row ready:', fixedRow);
+
+        if (!isMounted) {
+          console.log('⚠️ Component unmounted before setState');
+          return;
+        }
+
+        console.log('💾 Setting profile state...');
+        setProfile(fixedRow);
+
+        // pre-fill edit fields
+        console.log('📝 Pre-filling edit fields...');
+        setEditFullName(fixedRow.full_name ?? "");
+        setEditPhone(fixedRow.phone ?? "");
+
+        const parsed = parseBio(fixedRow.bio);
+        setEditFullAddress(parsed.address || "");
+        setEditIdType(parsed.idType || "");
+        setEditIdNumber(parsed.idNumber || "");
+        setEditAbout(parsed.about || "");
+
+        const fb = (links || []).find(
+          (l) =>
+            (l.label || "").toLowerCase() === "facebook" ||
+            /facebook\.com|fb\.com/i.test(l.url || "")
+        );
+        const ig = (links || []).find(
+          (l) =>
+            (l.label || "").toLowerCase() === "instagram" ||
+            /instagram\.com/i.test(l.url || "")
+        );
+        setFbUrl(fb?.url ? stripProtocol(fb.url) : "");
+        setIgUrl(ig?.url ? stripProtocol(ig.url) : "");
+
+        setVerifyOpen(false);
+        
+        console.log('✅ Profile load complete!');
+
+      } catch (err) {
+        console.error('💥 Fatal error in profile load:', err);
+        if (!isMounted) return;
+        setLoadErr(errorMessage(err, "Could not load your profile."));
+        setProfile(BLANK_PROFILE);
+      } finally {
+        if (isMounted) {
+          console.log('🏁 Setting loading to false');
+          setLoading(false);
+        } else {
+          console.log('⚠️ Component unmounted, skipping loading=false');
+        }
       }
-      isRunning = false; // ✅ Allow next run
     }
-  }
 
-  run();
+    run();
 
     return () => {
+      console.log('🧹 Component cleanup - setting isMounted = false');
       isMounted = false;
     };
   }, []);
