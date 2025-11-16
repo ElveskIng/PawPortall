@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
 
 type Proof = {
@@ -49,7 +49,7 @@ export default function AddPetPaymentBlock() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const qrSrc = process.env.NEXT_PUBLIC_GCASH_QR_URL || "/gcash-qr.png";
 
-  const supabase = getSupabaseBrowserClient();
+  const supabase = useMemo(() => getSupabaseBrowserClient(), []);
   const userIdRef = useRef<string | null>(null);
 
   function openDialog(title: string, body: string) {
@@ -76,10 +76,8 @@ export default function AddPetPaymentBlock() {
 
   const hasPending = proofs.some((p) => p.status === "pending");
 
-  // initial load + realtime + silent polling
   useEffect(() => {
     let channel: ReturnType<typeof supabase.channel> | null = null;
-    let interval: ReturnType<typeof setInterval> | null = null;
     let cancelled = false;
 
     const setup = async () => {
@@ -113,10 +111,6 @@ export default function AddPetPaymentBlock() {
         )
         .subscribe();
 
-      // small silent polling fallback
-      interval = setInterval(() => {
-        void loadProofs({ silent: true });
-      }, 3000);
     };
 
     void setup();
@@ -124,7 +118,6 @@ export default function AddPetPaymentBlock() {
     return () => {
       cancelled = true;
       if (channel) supabase.removeChannel(channel);
-      if (interval) clearInterval(interval);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

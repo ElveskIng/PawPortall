@@ -176,8 +176,6 @@ export default async function AdminPaymentProofsPage({
 
   return (
     <div className="space-y-6">
-      <PaymentProofsRealtime />
-
       <h1 className="text-xl font-semibold">Payment Proofs</h1>
 
       {proofs.length === 0 ? (
