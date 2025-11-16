@@ -366,6 +366,14 @@ export default function ProfilePage() {
   });
 }, [profile]);
 
+useEffect(() => {
+     console.log('🔄 Loading state:', loading);
+   }, [loading]);
+
+   useEffect(() => {
+     console.log('📦 Full profile object:', JSON.stringify(profile, null, 2));
+   }, [profile]);
+
   const avatarSrc = useMemo(() => {
     if (!profile?.avatar_url) return null;
     return profile.avatar_url.includes("?")
