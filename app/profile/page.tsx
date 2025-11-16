@@ -139,12 +139,9 @@ function buildBio(
   return parts.join("\n");
 }
 
-/** Require verification until phone is 11 digits and a full address exists. */
-function requiresVerification(p: ProfileRow | null) {
-  if (!p) return true;
-  const hasPhone = !!(p.phone && p.phone.trim().length === 11);
-  const { address } = parseBio(p.bio);
-  return !(hasPhone && address);
+/** 🚫 HINDI NA NAGBA-BLOCK: laging false */
+function requiresVerification(_p: ProfileRow | null) {
+  return false;
 }
 
 /* ------------------------------- Page ---------------------------- */
@@ -155,7 +152,7 @@ export default function ProfilePage() {
   const [userId, setUserId] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
 
-  // ✅ Default agad sa BLANK_PROFILE (hindi na null)
+  // ✅ Default agad sa BLANK_PROFILE
   const [profile, setProfile] = useState<ProfileRow>(BLANK_PROFILE);
   const [loading, setLoading] = useState(true);
   const [loadErr, setLoadErr] = useState<string | null>(null);
@@ -375,7 +372,7 @@ export default function ProfilePage() {
 
   const onFilePicked = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
-       if (!f) return;
+    if (!f) return;
     setAvatarFile(f);
     if (avatarPreview) URL.revokeObjectURL(avatarPreview);
     setAvatarPreview(URL.createObjectURL(f));
@@ -605,8 +602,6 @@ export default function ProfilePage() {
   }
 
   /* ------------------------------- render --------------------------- */
-  // ❌ WALA NA yung dating `if (!profile) { ... }` na skeleton lang
-
   return (
     <div className="max-w-5xl mx-auto px-4 py-8">
       <h1 className="text-3xl font-bold tracking-tight">Your Profile</h1>
@@ -622,6 +617,8 @@ export default function ProfilePage() {
         </p>
       )}
 
+      {/* 🔕 Wala nang actual blocking, pero pwede mong i-keep o i-remove itong banner.
+          Dahil requiresVerification() => false, hindi na ito magre-render. */}
       {requiresVerification(profile) && (
         <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-amber-800 flex items-start gap-3">
           <ShieldCheck className="h-5 w-5 mt-0.5" />
@@ -1003,7 +1000,7 @@ export default function ProfilePage() {
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4">
           <div className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-xl">
             <div className="px-5 py-3 bg-gradient-to-r from-violet-600 via-fuchsia-600 to-purple-600 text-white flex items-center justify-center">
-              <div className="font-semibold">Identity verification (required)</div>
+              <div className="font-semibold">Identity verification</div>
             </div>
 
             <div className="p-6 space-y-5">
