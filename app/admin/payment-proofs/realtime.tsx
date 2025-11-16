@@ -7,7 +7,7 @@ import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
 /**
  * Live updates for payment_proofs.
  * - Subscribes to Supabase Realtime (INSERT/UPDATE/DELETE)
- * - NO polling (relies on realtime + focus refresh only)
+ * - NO polling (relies on realtime only)
  * - Refreshes when tab regains focus
  */
 export default function PaymentProofsRealtime() {
@@ -15,9 +15,8 @@ export default function PaymentProofsRealtime() {
   const router = useRouter();
   const qs = useSearchParams();
   
-  // Prevent multiple refreshes
   const lastRefresh = useRef(0);
-  const REFRESH_COOLDOWN = 500; // ms
+  const REFRESH_COOLDOWN = 1000; // 1 second cooldown
 
   useEffect(() => {
     let debounce: ReturnType<typeof setTimeout> | undefined;
@@ -25,23 +24,27 @@ export default function PaymentProofsRealtime() {
     const triggerRefresh = () => {
       const now = Date.now();
       if (now - lastRefresh.current < REFRESH_COOLDOWN) {
-        return; // Skip if refreshed recently
+        console.log('⏭️ Skipping refresh - too soon');
+        return;
       }
       
       clearTimeout(debounce);
       debounce = setTimeout(() => {
         lastRefresh.current = Date.now();
         router.refresh();
-      }, 150);
+      }, 200);
     };
 
-    // Realtime only (no polling!)
+    // Realtime only - NO POLLING!
     const channel = supabase
       .channel("pp-payment-proofs")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "payment_proofs" },
-        () => triggerRefresh()
+        () => {
+          console.log('📊 Payment proof changed - refreshing');
+          triggerRefresh();
+        }
       )
       .subscribe();
 
