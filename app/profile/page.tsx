@@ -351,7 +351,7 @@ export default function ProfilePage() {
       isMounted = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [supabase]);
+  }, []);
 
   //REMOVE | ONLY A TEST
   useEffect(() => {
